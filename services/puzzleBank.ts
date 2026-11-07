@@ -10,6 +10,8 @@
 
 import { MARATHI_DICTIONARY, getMarathiWordClue, sanitizeClue } from './marathiDictionary';
 import { transformGridMatrix, extractWordsFromMatrix } from './denseCrosswordEngine';
+import { generateDynamicCrosswordFromCorpus } from './dynamicCrosswordSolver';
+import { findThematicMasterPuzzle, THEMATIC_MASTER_PUZZLES } from './themedMasterPuzzles';
 
 export interface MasterGridPuzzle {
     id: string;
@@ -9109,18 +9111,17 @@ export function getPuzzleListForSize(gridSize: number): MasterGridPuzzle[] {
         case 9:
             return VERIFIED_PUZZLES_9X9;
         case 12:
-            return VERIFIED_PUZZLES_12X12;
+            return [...VERIFIED_PUZZLES_12X12, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 12)];
         case 15:
-            return VERIFIED_PUZZLES_15X15;
+            return [...VERIFIED_PUZZLES_15X15, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 15)];
         case 20:
             return VERIFIED_PUZZLES_20X20;
         case 25:
             return VERIFIED_PUZZLES_25X25;
         case 10:
-            return VERIFIED_PUZZLES;
+            return [...VERIFIED_PUZZLES, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 10)];
         default: {
             try {
-                const { generateDynamicCrosswordFromCorpus } = require('./dynamicCrosswordSolver');
                 const dyn = generateDynamicCrosswordFromCorpus(gridSize, 1);
                 if (dyn && dyn.grid && dyn.grid.length === gridSize) {
                     const rawGrid = dyn.grid.map((row: any) =>
@@ -9148,35 +9149,6 @@ export function getPuzzleListForSize(gridSize: number): MasterGridPuzzle[] {
 }
 
 function sanitizeMasterPuzzleGrid(puzzle: MasterGridPuzzle): MasterGridPuzzle {
-    if (!puzzle || !puzzle.grid || puzzle.grid.length === 0) return puzzle;
-    let blackCount = 0;
-    const size = puzzle.grid.length;
-    puzzle.grid.forEach(row => row.forEach(cell => {
-        if (!cell || cell === '#' || cell.trim() === '') blackCount++;
-    }));
-    const pct = Math.round((blackCount / (size * size)) * 100);
-    if (pct <= 25) return puzzle;
-
-    try {
-        const { generateDynamicCrosswordFromCorpus } = require('./dynamicCrosswordSolver');
-        const dyn = generateDynamicCrosswordFromCorpus(size, 1);
-        if (dyn && dyn.grid && dyn.grid.length === size) {
-            const rawGrid = dyn.grid.map((row: any) =>
-                row.map((cell: any) => cell.isBlack || !cell.letter ? '#' : cell.letter)
-            );
-            const rawClues = [
-                ...dyn.clues.across.map((c: any) => ({ word: c.word, clue: c.clue })),
-                ...dyn.clues.down.map((c: any) => ({ word: c.word, clue: c.clue }))
-            ];
-            return {
-                ...puzzle,
-                grid: rawGrid,
-                clues: rawClues,
-                totalWordCount: rawClues.length
-            };
-        }
-    } catch {}
-
     return puzzle;
 }
 
@@ -9191,18 +9163,18 @@ export function getVerifiedPuzzle(gridSize: number, themeIdx: number = 0): Maste
 
 /**
  * Retrieves a fresh puzzle with guaranteed CHANGING BLACK SQUARE POSITIONS and completely new words
- * across attempts.
+ * across attempts, adapting closely to the target black square percentage.
  */
 export function getFreshVerifiedPuzzle(
     usedWords: Set<string> = new Set(),
     gridSize: number = 10,
     attemptNumber: number = 1,
-    excludeMaskSignature?: string
+    excludeMaskSignature?: string,
+    targetBlackPct?: number
 ): MasterGridPuzzle {
     // 1. First attempt dynamic on-the-fly generation from user 1000-word corpus with guaranteed new black squares
     try {
-        const { generateDynamicCrosswordFromCorpus } = require('./dynamicCrosswordSolver');
-        const dynamicPuzzle = generateDynamicCrosswordFromCorpus(gridSize, attemptNumber, usedWords, undefined, 'auto', excludeMaskSignature);
+        const dynamicPuzzle = generateDynamicCrosswordFromCorpus(gridSize, attemptNumber, usedWords, undefined, 'auto', excludeMaskSignature, targetBlackPct);
         if (dynamicPuzzle && dynamicPuzzle.grid && dynamicPuzzle.grid.length === gridSize) {
             const rawGrid = dynamicPuzzle.grid.map((row: any) => 
                 row.map((cell: any) => cell.isBlack || !cell.letter ? '#' : cell.letter)
@@ -9222,7 +9194,7 @@ export function getFreshVerifiedPuzzle(
                 totalWordCount: rawClues.length
             };
         }
-    } catch (dynErr) {
+    } catch (_dynErr) {
         // Fallback to verified pool
     }
 
@@ -9231,8 +9203,15 @@ export function getFreshVerifiedPuzzle(
         return sanitizeMasterPuzzleGrid(VERIFIED_PUZZLES[0]);
     }
 
-    // Helper to get signature
+    // Helper to get signature and black square percentage
     const getSig = (p: MasterGridPuzzle) => p.grid.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
+    const getBlackPct = (p: MasterGridPuzzle) => {
+        let b = 0;
+        p.grid.forEach(row => row.forEach(cell => {
+            if (!cell || cell === '#' || cell.trim() === '') b++;
+        }));
+        return Math.round((b / (gridSize * gridSize)) * 100);
+    };
 
     // Filter to candidates that have a DIFFERENT black square mask if possible
     let candidates = list;
@@ -9242,23 +9221,55 @@ export function getFreshVerifiedPuzzle(
             candidates = diffMaskCandidates;
         }
     }
-    
-    // Choose candidate by rotating through distinct masks in the list
-    const startIndex = (Math.max(1, attemptNumber) - 1) % candidates.length;
-    
-    let bestCandidate = candidates[startIndex];
-    let minOverlap = Infinity;
 
-    for (let i = 0; i < candidates.length; i++) {
-        const candidate = candidates[(startIndex + i) % candidates.length];
-        const overlap = candidate.clues.filter(c => usedWords.has(c.word)).length;
-        if (overlap < minOverlap) {
-            minOverlap = overlap;
-            bestCandidate = candidate;
-            if (overlap === 0) break;
+    // Sort candidates by targetBlackPct proximity if provided
+    if (targetBlackPct !== undefined && targetBlackPct > 0) {
+        candidates = [...candidates].sort((a, b) => {
+            const diffA = Math.abs(getBlackPct(a) - targetBlackPct);
+            const diffB = Math.abs(getBlackPct(b) - targetBlackPct);
+            if (diffA !== diffB) return diffA - diffB;
+            const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
+            const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+            return overlapA - overlapB;
+        });
+    } else {
+        candidates = [...candidates].sort((a, b) => {
+            const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
+            const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+            return overlapA - overlapB;
+        });
+    }
+    
+    // Choose candidate by rotating through top candidates
+    const topCount = Math.min(candidates.length, Math.max(1, Math.min(5, candidates.length)));
+    const chosenIndex = (Math.max(1, attemptNumber) - 1) % topCount;
+    let chosen = candidates[chosenIndex] || candidates[0];
+
+    // If excludeMaskSignature is set and chosen has the exact same mask signature (e.g. only 1 distinct mask in list)
+    if (excludeMaskSignature && getSig(chosen) === excludeMaskSignature) {
+        // Apply spatial transformation so that black blocks guaranteed move
+        for (let v = 1; v < 8; v++) {
+            const variantGrid = transformGridMatrix(chosen.grid, (attemptNumber * 3 + v) % 8);
+            const varSig = variantGrid.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
+            if (varSig !== excludeMaskSignature) {
+                const words = extractWordsFromMatrix(variantGrid);
+                const allWords = [...words.acrossWords, ...words.downWords];
+                const clues = allWords.map(w => ({
+                    word: w,
+                    clue: getMarathiWordClue(w) || MARATHI_DICTIONARY[w] || 'संकेतावरून ओळखा'
+                }));
+                return {
+                    ...chosen,
+                    id: `${chosen.id}_variant_${v}`,
+                    grid: variantGrid,
+                    clues,
+                    totalWordCount: clues.length
+                };
+            }
         }
     }
-    return sanitizeMasterPuzzleGrid(bestCandidate);
+
+    return sanitizeMasterPuzzleGrid(chosen);
 }
 
 export function getThemedFreshPuzzle(
@@ -9266,12 +9277,12 @@ export function getThemedFreshPuzzle(
     usedWords: Set<string> = new Set(),
     attemptNumber: number = 1,
     gridSize: number = 10,
-    excludeMaskSignature?: string
+    excludeMaskSignature?: string,
+    targetBlackPct?: number
 ): MasterGridPuzzle {
     // 1. Try dynamic on-the-fly generation for any theme
     try {
-        const { generateDynamicCrosswordFromCorpus } = require('./dynamicCrosswordSolver');
-        const dynamicPuzzle = generateDynamicCrosswordFromCorpus(gridSize, attemptNumber, usedWords, undefined, themeId, excludeMaskSignature);
+        const dynamicPuzzle = generateDynamicCrosswordFromCorpus(gridSize, attemptNumber, usedWords, undefined, themeId, excludeMaskSignature, targetBlackPct);
         if (dynamicPuzzle && dynamicPuzzle.grid && dynamicPuzzle.grid.length === gridSize) {
             const rawGrid = dynamicPuzzle.grid.map((row: any) => 
                 row.map((cell: any) => cell.isBlack || !cell.letter ? '#' : cell.letter)
@@ -9296,11 +9307,17 @@ export function getThemedFreshPuzzle(
 
     const list = getPuzzleListForSize(gridSize);
     const getSig = (p: MasterGridPuzzle) => p.grid.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
+    const getBlackPct = (p: MasterGridPuzzle) => {
+        let b = 0;
+        p.grid.forEach(row => row.forEach(cell => {
+            if (!cell || cell === '#' || cell.trim() === '') b++;
+        }));
+        return Math.round((b / (gridSize * gridSize)) * 100);
+    };
 
     if (themeId && themeId !== 'auto') {
         // 1. First check thematic multi-variant puzzles from themed master bank for this EXACT size
         try {
-            const { findThematicMasterPuzzle } = require('./themedMasterPuzzles');
             const thematicCandidate = findThematicMasterPuzzle(themeId, usedWords, attemptNumber, gridSize);
             if (thematicCandidate && thematicCandidate.gridSize === gridSize) {
                 // If this thematic candidate has the same mask and we want a different mask, check if another candidate exists
@@ -9329,26 +9346,31 @@ export function getThemedFreshPuzzle(
                 if (diffMask.length > 0) matchingList = diffMask;
             }
 
-            // Pick the candidate with the lowest word overlap with usedWords to ensure fresh seeding
-            const startIndex = (Math.max(1, attemptNumber) - 1) % matchingList.length;
-            let bestThemed = matchingList[startIndex];
-            let minOverlap = Infinity;
-
-            for (let i = 0; i < matchingList.length; i++) {
-                const candidate = matchingList[(startIndex + i) % matchingList.length];
-                const overlap = candidate.clues.filter(c => usedWords.has(c.word)).length;
-                if (overlap < minOverlap) {
-                    minOverlap = overlap;
-                    bestThemed = candidate;
-                    if (overlap === 0) break;
-                }
+            // Rank by targetBlackPct proximity first, then word overlap
+            if (targetBlackPct !== undefined && targetBlackPct > 0) {
+                matchingList = [...matchingList].sort((a, b) => {
+                    const diffA = Math.abs(getBlackPct(a) - targetBlackPct);
+                    const diffB = Math.abs(getBlackPct(b) - targetBlackPct);
+                    if (diffA !== diffB) return diffA - diffB;
+                    const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
+                    const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+                    return overlapA - overlapB;
+                });
+            } else {
+                matchingList = [...matchingList].sort((a, b) => {
+                    const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
+                    const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+                    return overlapA - overlapB;
+                });
             }
-            return bestThemed;
+
+            const startIndex = (Math.max(1, attemptNumber) - 1) % matchingList.length;
+            return matchingList[startIndex] || matchingList[0];
         }
 
         // 3. If no pre-built puzzle for this size/theme, pick fresh verified puzzle of the EXACT size and set theme meta
         if (themeInfo) {
-            const base = getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature);
+            const base = getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature, targetBlackPct);
             return {
                 ...base,
                 title: `शब्दवेध (${themeInfo.name})`,
@@ -9357,5 +9379,5 @@ export function getThemedFreshPuzzle(
             };
         }
     }
-    return getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature);
+    return getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature, targetBlackPct);
 }

@@ -144,12 +144,31 @@ export const INTERLOCKING_MASKS_5X5: string[][] = [
 ];
 
 export const INTERLOCKING_MASKS_6X6: string[][] = [
+    // 1. 17% black squares (6 black cells - Ultra dense)
+    [
+        "00#000",
+        "000#00",
+        "0000#0",
+        "0#0000",
+        "00#000",
+        "000#00"
+    ],
+    // 2. 22% black squares (8 black cells - Balanced ideal)
     [
         "00#000",
         "000#00",
         "#000#0",
         "0#000#",
         "00#000",
+        "000#00"
+    ],
+    // 3. 28% black squares (10 black cells - Classic standard)
+    [
+        "00#000",
+        "0#00#0",
+        "#0000#",
+        "#0000#",
+        "0#00#0",
         "000#00"
     ]
 ];
@@ -656,7 +675,8 @@ export function generateDynamicCrosswordFromCorpus(
     usedWords: Set<string> = new Set(),
     customWords?: CustomWordItem[],
     themeId: string = 'auto',
-    excludeMaskSignature?: string
+    excludeMaskSignature?: string,
+    targetBlackPct?: number
 ): PuzzleData | null {
     const catalog = buildWordCatalog(customWords, themeId);
     if (catalog.length < 20) return null;
@@ -665,13 +685,27 @@ export function generateDynamicCrosswordFromCorpus(
     const masks = getMasksForSize(gridSize);
     if (!masks || masks.length === 0) return null;
 
-    // Shuffle mask choices to guarantee a DIFFERENT mask
+    // Helper to calculate mask black square percentage
+    const getMaskBlackPct = (m: string[]) => {
+        let b = 0;
+        m.forEach(r => { for (const ch of r) if (ch === '#') b++; });
+        return (b / (gridSize * gridSize)) * 100;
+    };
+
+    // Shuffle mask choices to prioritize targetBlackPct and guarantee changing masks across attempts
     const maskIndices = masks.map((_, i) => i);
     const sortedIndices = maskIndices.sort((a, b) => {
-        const diffA = (a + attemptNumber * 3) % masks.length;
-        const diffB = (b + attemptNumber * 3) % masks.length;
-        return diffA - diffB;
+        if (targetBlackPct !== undefined && targetBlackPct > 0) {
+            const diffA = Math.abs(getMaskBlackPct(masks[a]) - targetBlackPct);
+            const diffB = Math.abs(getMaskBlackPct(masks[b]) - targetBlackPct);
+            if (Math.abs(diffA - diffB) > 2) return diffA - diffB;
+        }
+        const rotA = (a + attemptNumber * 3) % masks.length;
+        const rotB = (b + attemptNumber * 3) % masks.length;
+        return rotA - rotB;
     });
+
+    const maxAllowedBlackPct = targetBlackPct ? Math.max(38, targetBlackPct + 6) : 38;
 
     for (const mIdx of sortedIndices) {
         const baseMask = masks[mIdx];
@@ -695,8 +729,8 @@ export function generateDynamicCrosswordFromCorpus(
                 }
             });
             const maskBlackPct = (maskBlackCount / (gridSize * gridSize)) * 100;
-            if (maskBlackPct > 25.0) {
-                continue; // Strictly reject any mask layout that exceeds 25% black squares
+            if (maskBlackPct > maxAllowedBlackPct) {
+                continue;
             }
 
             const slots = extractSlotsFromMask(transformedMask);
@@ -725,8 +759,8 @@ export function generateDynamicCrosswordFromCorpus(
                     }
                 }
                 const actualBlackPct = Math.round((actualBlackCount / (N * N)) * 100);
-                if (actualBlackPct > 25) {
-                    continue; // Strictly enforce max 25% black squares
+                if (actualBlackPct > maxAllowedBlackPct) {
+                    continue;
                 }
 
                 const acrossList = placedWords.filter(p => p.slot.dir === 'across').map(p => ({

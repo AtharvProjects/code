@@ -8,7 +8,7 @@
  * 4. NO Marathi word EVER feels unknown to the app!
  */
 
-import { MARATHI_DICTIONARY, SMART_WORD_CLUES } from './marathiDictionary';
+import { MARATHI_DICTIONARY, SMART_WORD_CLUES, sanitizeClue } from './marathiDictionary';
 import { USER_WORDS_SET } from './userLexicon1000';
 import { IMPORTED_VOCABULARY_MAP, IMPORTED_VOCABULARY_WORDS } from './importedVocabularyDatabase';
 
@@ -39,9 +39,10 @@ export function initializeInfiniteLexicon(): number {
                 for (const entry of parsed) {
                     if (entry && entry.word && entry.clue) {
                         const cleanWord = entry.word.trim();
-                        const cleanClue = entry.clue.trim();
+                        const rawClue = entry.clue.trim();
+                        const cleanClue = sanitizeClue(cleanWord, rawClue);
                         if (cleanWord.length >= 2 && cleanClue.length >= 2) {
-                            learnedRegistry.set(cleanWord, entry);
+                            learnedRegistry.set(cleanWord, { ...entry, clue: cleanClue });
                             // Hydrate memory dictionaries
                             MARATHI_DICTIONARY[cleanWord] = cleanClue;
                             SMART_WORD_CLUES[cleanWord] = cleanClue;
@@ -66,7 +67,7 @@ export function initializeInfiniteLexicon(): number {
 export function saveWordToInfiniteLexicon(word: string, clue: string, source: string = 'ai_auto'): boolean {
     if (!word || !clue) return false;
     const cleanWord = word.trim();
-    const cleanClue = clue.trim();
+    const cleanClue = sanitizeClue(cleanWord, clue.trim());
     if (cleanWord.length < 2 || cleanClue.length < 2) return false;
 
     const entry: LearnedWordEntry = {
@@ -108,7 +109,7 @@ export function batchSaveWordsToInfiniteLexicon(entries: { word: string; clue: s
     for (const e of entries) {
         if (e && e.word && e.clue) {
             const cleanW = e.word.trim();
-            const cleanC = e.clue.trim();
+            const cleanC = sanitizeClue(cleanW, e.clue.trim());
             if (cleanW.length >= 2 && cleanC.length >= 2) {
                 learnedRegistry.set(cleanW, {
                     word: cleanW,

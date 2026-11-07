@@ -32,6 +32,7 @@ import {
     generateWordCluesFromAI,
     getCluesForWords
 } from './services/geminiService';
+import { transformGridMatrix, buildPuzzleDataFromMatrix } from './services/denseCrosswordEngine';
 
 const App: React.FC = () => {
     const [wordClues, setWordClues] = useState<WordClue[]>([]);
@@ -57,6 +58,10 @@ const App: React.FC = () => {
     const [attemptSuccessMsg, setAttemptSuccessMsg] = useState<string | null>(null);
     const [usedWordsHistory, setUsedWordsHistory] = useState<Set<string>>(new Set());
     const [selectedTheme, setSelectedTheme] = useState<string>('auto');
+    const [puzzleSource, setPuzzleSource] = useState<'ai' | 'database'>('ai');
+    const [isAiClueSyncing, setIsAiClueSyncing] = useState(false);
+    const [aiSyncSuccessMsg, setAiSyncSuccessMsg] = useState<string | null>(null);
+    const aiFetchedWordsCacheRef = useRef<Map<string, string>>(new Map());
     const [showTransferToManualModal, setShowTransferToManualModal] = useState(false);
     const [showVocabModal, setShowVocabModal] = useState(false);
 
@@ -160,7 +165,7 @@ const App: React.FC = () => {
         }
 
         const currentSignature = puzzleData?.grid ? getGridMaskSignature(puzzleData.grid) : undefined;
-        const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, newSize, currentSignature);
+        const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, newSize, currentSignature, blackSquarePercentage);
         const newPuzzle = buildPuzzleFromMaster(master);
         setPuzzleData(newPuzzle);
         setPuzzleVersion(v => v + 1);
@@ -175,10 +180,14 @@ const App: React.FC = () => {
             return updated.size > 300 ? new Set(Array.from(updated).slice(-150)) : updated;
         });
 
-        setAttemptSuccessMsg(`${newSize}x${newSize} कोडे यशस्वीरीत्या लोड झाले (${master.theme} | काळ्या चौकोनांची नवी जागा व शब्द)`);
+        const totalC = newPuzzle.grid.length * newPuzzle.grid[0].length;
+        const blackC = newPuzzle.grid.flat().filter(c => c.isBlack).length;
+        const actualPct = Math.round((blackC / totalC) * 100);
+
+        setAttemptSuccessMsg(`${newSize}x${newSize} कोडे यशस्वीरीत्या लोड झाले (${master.theme} | काळे चौकोन: ${toDevanagari(actualPct)}% [${toDevanagari(blackC)}/${toDevanagari(totalC)}])`);
     };
 
-    const handleShuffleMask = () => {
+    const handleShuffleMask = async () => {
         const nextAttempt = attemptCount + 1;
         setAttemptCount(nextAttempt);
         setShowSolution(false);
@@ -193,15 +202,62 @@ const App: React.FC = () => {
         }
 
         const currentSignature = puzzleData?.grid ? getGridMaskSignature(puzzleData.grid) : undefined;
-        const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, gridSize, currentSignature);
-        const newPuzzle = buildPuzzleFromMaster(master);
+        let newPuzzle: PuzzleData;
+
+        if (puzzleSource === 'ai') {
+            setIsGenerating(true);
+            try {
+                const aiResult = await generateDenseCrosswordAI(
+                    gridSize,
+                    blackSquarePercentage,
+                    puzzleLevel,
+                    nextAttempt,
+                    currentWords,
+                    selectedTheme,
+                    currentSignature
+                );
+                if (aiResult && aiResult.grid && aiResult.grid.length > 0) {
+                    newPuzzle = await buildPuzzleFromAIGrid(aiResult.grid, aiResult.clues, gridSize);
+                    aiResult.clues.forEach(c => {
+                        if (c.word && c.clue) {
+                            aiFetchedWordsCacheRef.current.set(c.word.trim(), c.clue.trim());
+                        }
+                    });
+                } else {
+                    const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, gridSize, currentSignature, blackSquarePercentage);
+                    newPuzzle = buildPuzzleFromMaster(master);
+                }
+            } catch {
+                const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, gridSize, currentSignature, blackSquarePercentage);
+                newPuzzle = buildPuzzleFromMaster(master);
+            } finally {
+                setIsGenerating(false);
+            }
+        } else {
+            const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, gridSize, currentSignature, blackSquarePercentage);
+            newPuzzle = buildPuzzleFromMaster(master);
+        }
+
+        // Guarantee that the mask signature ALWAYS changes on shuffle
+        let newSig = getGridMaskSignature(newPuzzle.grid);
+        if (currentSignature && newSig === currentSignature) {
+            for (let v = 1; v < 8; v++) {
+                const charMatrix = newPuzzle.grid.map(row => row.map(cell => cell.isBlack || !cell.letter ? '#' : cell.letter));
+                const transformed = transformGridMatrix(charMatrix, (nextAttempt * 3 + v) % 8);
+                const testSig = transformed.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
+                if (testSig !== currentSignature) {
+                    newPuzzle = buildPuzzleDataFromMatrix(transformed, selectedTheme);
+                    break;
+                }
+            }
+        }
+
         setPuzzleData(newPuzzle);
         setPuzzleVersion(v => v + 1);
 
         const newWords = new Set<string>();
         newPuzzle.clues.across.forEach(c => { if (c.word) newWords.add(c.word); });
         newPuzzle.clues.down.forEach(c => { if (c.word) newWords.add(c.word); });
-        const overlapWords = [...newWords].filter(w => currentWords.has(w));
 
         setUsedWordsHistory(prev => {
             const updated = new Set(prev);
@@ -209,7 +265,52 @@ const App: React.FC = () => {
             return updated.size > 300 ? new Set(Array.from(updated).slice(-150)) : updated;
         });
 
-        setAttemptSuccessMsg(`प्रयत्न #${toDevanagari(nextAttempt)}: काळ्या चौकोनांची नवी जागा व ८,०००+ अधिकृत डेटाबेसमधून पूर्णपणे नवीन अर्थपूर्ण शब्दांची निवड झाली!`);
+        const totalC = newPuzzle.grid.length * newPuzzle.grid[0].length;
+        const blackC = newPuzzle.grid.flat().filter(c => c.isBlack).length;
+        const actualPct = Math.round((blackC / totalC) * 100);
+
+        setAttemptSuccessMsg(`प्रयत्न #${toDevanagari(nextAttempt)}: काळ्या चौकोनांची नवी जागा व शब्द यशस्वीरीत्या बदलले! (काळे चौकोन: ${toDevanagari(actualPct)}% [${toDevanagari(blackC)}/${toDevanagari(totalC)} घरे])`);
+    };
+
+    const handleDatabaseGenerate = () => {
+        setIsGenerating(true);
+        setAiError(null);
+        setShowSolution(false);
+        setIsEditMode(false);
+        setPuzzleSource('database');
+        const nextAttempt = attemptCount + 1;
+        setAttemptCount(nextAttempt);
+
+        const currentWords = new Set<string>(usedWordsHistory);
+        if (puzzleData?.clues?.across) {
+            puzzleData.clues.across.forEach(c => { if (c.word) currentWords.add(c.word); });
+        }
+        if (puzzleData?.clues?.down) {
+            puzzleData.clues.down.forEach(c => { if (c.word) currentWords.add(c.word); });
+        }
+
+        const currentSignature = puzzleData?.grid ? getGridMaskSignature(puzzleData.grid) : undefined;
+        const master = getThemedFreshPuzzle(selectedTheme, currentWords, nextAttempt, gridSize, currentSignature, blackSquarePercentage);
+        const newPuzzle = buildPuzzleFromMaster(master);
+        setPuzzleData(newPuzzle);
+        setPuzzleVersion(v => v + 1);
+
+        const newWords = new Set<string>();
+        newPuzzle.clues.across.forEach(c => { if (c.word) newWords.add(c.word); });
+        newPuzzle.clues.down.forEach(c => { if (c.word) newWords.add(c.word); });
+
+        setUsedWordsHistory(prev => {
+            const updated = new Set(prev);
+            newWords.forEach(w => updated.add(w));
+            return updated.size > 300 ? new Set(Array.from(updated).slice(-150)) : updated;
+        });
+
+        const totalC = newPuzzle.grid.length * newPuzzle.grid[0].length;
+        const blackC = newPuzzle.grid.flat().filter(c => c.isBlack).length;
+        const actualPct = Math.round((blackC / totalC) * 100);
+
+        setAttemptSuccessMsg(`प्रयत्न #${toDevanagari(nextAttempt)}: ८,०००+ अधिकृत शब्दभांडार डेटाबेसमधून कोडे व क्लूज यशस्वीरीत्या तयार झाले (${master.theme} | काळे चौकोन: ${toDevanagari(actualPct)}%)`);
+        setIsGenerating(false);
     };
 
     const handleAiGenerate = async () => {
@@ -218,6 +319,7 @@ const App: React.FC = () => {
         setAttemptSuccessMsg(null);
         setShowSolution(false);
         setIsEditMode(false);
+        setPuzzleSource('ai');
         const currentPuzzle = puzzleData;
         const currentAttempt = attemptCount;
 
@@ -233,7 +335,7 @@ const App: React.FC = () => {
         const currentSignature = currentPuzzle?.grid ? getGridMaskSignature(currentPuzzle.grid) : undefined;
 
         try {
-            // 1. Direct AI / Dynamic Dense Crossword generation with guaranteed fresh words and different black squares
+            // 1. Direct AI / Dynamic Dense Crossword generation with guaranteed fresh words and Gemini AI clues
             try {
                 const aiResult = await generateDenseCrosswordAI(
                     gridSize,
@@ -250,6 +352,13 @@ const App: React.FC = () => {
                     setPuzzleVersion(v => v + 1);
                     setAttemptCount(prev => prev + 1);
 
+                    // Cache AI clues in memory for real-time reference
+                    aiResult.clues.forEach(c => {
+                        if (c.word && c.clue) {
+                            aiFetchedWordsCacheRef.current.set(c.word.trim(), c.clue.trim());
+                        }
+                    });
+
                     // Calculate overlap with previous puzzles & update history
                     const newWords = new Set<string>();
                     puzzle.clues.across.forEach(c => { if (c.word) newWords.add(c.word); });
@@ -262,7 +371,7 @@ const App: React.FC = () => {
                         return updated.size > 250 ? new Set(Array.from(updated).slice(-100)) : updated;
                     });
 
-                    setAttemptSuccessMsg(`प्रयत्न #${currentAttempt} यशस्वी! काळ्या चौकोनांची नवी जागा व पूर्ण नवीन शब्द (१,०००+ अस्सल शब्दभांडारातून निवड | मागील कोड्यातील केवळ ${overlapWords.length} शब्द)`);
+                    setAttemptSuccessMsg(`प्रयत्न #${toDevanagari(currentAttempt)}: Gemini AI द्वारे शब्द व अस्सल एआय क्लूज तयार झाले! (मागील कोड्यातील केवळ ${toDevanagari(overlapWords.length)} शब्द)`);
                     return;
                 }
             } catch (_denseError) {
@@ -276,31 +385,9 @@ const App: React.FC = () => {
             setPuzzleData(puzzle);
             setPuzzleVersion(v => v + 1);
             setAttemptCount(prev => prev + 1);
-            setAttemptSuccessMsg(`प्रयत्न #${currentAttempt}: नवीन शब्दांची पेरणी व काळ्या चौकोनांची जागा बदलली! (१,०००+ अस्सल शब्दभांडार)`);
+            setAttemptSuccessMsg(`प्रयत्न #${toDevanagari(currentAttempt)}: Gemini AI शब्द व रचना तयार झाली!`);
         } catch (_error) {
-            try {
-                const master = getThemedFreshPuzzle(selectedTheme, activeUsedWords, currentAttempt, gridSize, currentSignature);
-                const puzzle = buildPuzzleFromMaster(master);
-                setPuzzleData(puzzle);
-                setPuzzleVersion(v => v + 1);
-                setAttemptCount(prev => prev + 1);
-
-                const newWords = new Set<string>();
-                puzzle.clues.across.forEach(c => { if (c.word) newWords.add(c.word); });
-                puzzle.clues.down.forEach(c => { if (c.word) newWords.add(c.word); });
-                setUsedWordsHistory(prev => {
-                    const updated = new Set(prev);
-                    newWords.forEach(w => updated.add(w));
-                    return updated.size > 250 ? new Set(Array.from(updated).slice(-100)) : updated;
-                });
-
-                setAttemptSuccessMsg(`प्रयत्न #${currentAttempt} यशस्वी! काळ्या चौकोनांची नवी जागा व पूर्ण नवीन शब्द (१,०००+ अस्सल शब्दभांडार)`);
-            } catch (_fallbackError) {
-                setAiError('कोडे तयार करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.');
-                if (!puzzleData && currentPuzzle) {
-                    setPuzzleData(currentPuzzle);
-                }
-            }
+            handleDatabaseGenerate();
         } finally {
             setIsGenerating(false);
         }
@@ -454,24 +541,34 @@ const App: React.FC = () => {
 
     const gridDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const triggerAiClueGenerationForGrid = (grid: GridCell[][]) => {
+    const triggerAiClueGenerationForGrid = (grid: GridCell[][], changedWordsList: string[] = []) => {
         if (gridDebounceTimerRef.current) {
             clearTimeout(gridDebounceTimerRef.current);
         }
 
         gridDebounceTimerRef.current = setTimeout(async () => {
             const placedWordsRaw = extractPlacedWordsFromGrid(grid);
-            const uniqueWords = Array.from(new Set(placedWordsRaw.map(pw => pw.word))).filter(w => w && w.trim().length >= 2);
+            const uniqueWords = Array.from(new Set(placedWordsRaw.map(pw => pw.word.trim()))).filter(w => w.length >= 2);
             if (uniqueWords.length === 0) return;
 
+            // Target words needing AI clues: explicitly changed words or words missing cached AI clues
+            const wordsToFetch = (changedWordsList.length > 0
+                ? changedWordsList
+                : uniqueWords
+            ).filter(w => !aiFetchedWordsCacheRef.current.has(w));
+
+            if (wordsToFetch.length === 0) return;
+
+            setIsAiClueSyncing(true);
             try {
-                const aiCluesList = await getCluesForWords(uniqueWords, true);
+                const aiCluesList = await getCluesForWords(wordsToFetch, true); // forceAi: true
                 if (!aiCluesList || aiCluesList.length === 0) return;
 
-                const aiClueMap = new Map<string, string>();
                 aiCluesList.forEach(wc => {
                     if (wc.word && wc.clue && !isGenericClue(wc.clue)) {
-                        aiClueMap.set(wc.word.trim(), sanitizeClue(wc.word.trim(), wc.clue));
+                        const cleanWord = wc.word.trim();
+                        const cleanClue = sanitizeClue(cleanWord, wc.clue);
+                        aiFetchedWordsCacheRef.current.set(cleanWord, cleanClue);
                     }
                 });
 
@@ -480,7 +577,7 @@ const App: React.FC = () => {
                     const currentPlaced = extractPlacedWordsFromGrid(currentPuzzle.grid);
                     const updatedWordClues: WordClue[] = currentPlaced.map(pw => {
                         const word = pw.word.trim();
-                        const aiClue = aiClueMap.get(word);
+                        const aiClue = aiFetchedWordsCacheRef.current.get(word);
                         let existingClue: string | undefined;
                         if (currentPuzzle.clues) {
                             const found = [...currentPuzzle.clues.across, ...currentPuzzle.clues.down].find(c => c.word === word);
@@ -490,7 +587,8 @@ const App: React.FC = () => {
                         }
                         const dictClue = getMarathiWordClue(word);
                         const smartClue = generateSmartMarathiClue(word);
-                        const finalClue = aiClue || dictClue || smartClue || existingClue || '';
+                        // Priority: Newly fetched AI clue > Cached AI clue > Existing clue > Dictionary
+                        const finalClue = aiClue || existingClue || dictClue || smartClue || '';
                         return {
                             word,
                             clue: sanitizeClue(word, finalClue),
@@ -501,8 +599,12 @@ const App: React.FC = () => {
                 });
 
                 setPuzzleVersion(v => v + 1);
+                setAiSyncSuccessMsg(`बदललेल्या ${toDevanagari(wordsToFetch.length)} शब्दांचे क्लूज Gemini AI द्वारे अद्यतनित झाले!`);
+                setTimeout(() => setAiSyncSuccessMsg(null), 3500);
             } catch (_err) {
-                // Local dictionary fallback remains active
+                console.warn('Auto AI clue update failed:', _err);
+            } finally {
+                setIsAiClueSyncing(false);
             }
         }, 350);
     };
@@ -514,7 +616,16 @@ const App: React.FC = () => {
         const placedWordsRaw = extractPlacedWordsFromGrid(newGrid);
         const currentActiveWords = new Set(placedWordsRaw.map(pw => pw.word.trim()));
 
-        // 2. Preserve existing clues ONLY for words that are STILL present on the new grid (clears old/removed words!)
+        // 2. Identify words that were modified or newly formed on the grid
+        const previousActiveWords = new Set([
+            ...(puzzleData.clues?.across || []).map(c => c.word.trim()),
+            ...(puzzleData.clues?.down || []).map(c => c.word.trim()),
+        ]);
+        const changedWords = placedWordsRaw
+            .map(pw => pw.word.trim())
+            .filter(w => w.length >= 2 && !previousActiveWords.has(w));
+
+        // 3. Preserve existing clues ONLY for words that are STILL present on the new grid (clears old/removed words!)
         const existingCluesMap = new Map<string, string>();
         if (puzzleData.clues) {
             [...puzzleData.clues.across, ...puzzleData.clues.down].forEach(c => {
@@ -525,25 +636,26 @@ const App: React.FC = () => {
             });
         }
 
-        // 3. Build updated WordClue array with instant local dictionary clues or existing clues
+        // 4. Build updated WordClue array with instant local dictionary clues or cached AI clues
         const wordClues: WordClue[] = placedWordsRaw.map(pw => {
             const cleanW = pw.word.trim();
+            const cachedAi = aiFetchedWordsCacheRef.current.get(cleanW);
             const existingClue = existingCluesMap.get(cleanW);
             const dictClue = getMarathiWordClue(cleanW);
-            const validClue = (!existingClue || isGenericClue(existingClue)) ? (dictClue || generateSmartMarathiClue(cleanW)) : existingClue;
+            const validClue = cachedAi || existingClue || dictClue || generateSmartMarathiClue(cleanW);
             return {
                 word: cleanW,
                 clue: sanitizeClue(cleanW, validClue),
             };
         });
 
-        // 4. Create fresh PuzzleData with updated grid and clues immediately
+        // 5. Create fresh PuzzleData with updated grid and clues immediately
         const updatedPuzzle = createPuzzleDataFromGrid(newGrid, wordClues);
         setPuzzleData(updatedPuzzle);
         setPuzzleVersion(v => v + 1);
 
-        // 5. Trigger dedicated AI clue generation for edited/new grid words
-        triggerAiClueGenerationForGrid(newGrid);
+        // 6. Trigger dedicated Gemini AI clue generation for edited/new grid words
+        triggerAiClueGenerationForGrid(newGrid, changedWords);
     };
 
     const handleCluesChange = (newClues: Clues) => {
@@ -755,6 +867,8 @@ const App: React.FC = () => {
                     <div className="no-print mb-8">
                         <WordInputForm
                             onAiGenerate={handleAiGenerate}
+                            onDatabaseGenerate={handleDatabaseGenerate}
+                            puzzleSource={puzzleSource}
                             isAiLoading={isGenerating}
                             aiError={aiError}
                             gridSize={gridSize}
@@ -779,7 +893,7 @@ const App: React.FC = () => {
                                     puzzleData.clues.down.forEach(c => { if (c.word) currentWords.add(c.word); });
                                 }
 
-                                const master = getThemedFreshPuzzle(theme, currentWords, nextAttempt, gridSize);
+                                const master = getThemedFreshPuzzle(theme, currentWords, nextAttempt, gridSize, undefined, blackSquarePercentage);
                                 const newPuzzle = buildPuzzleFromMaster(master);
                                 setPuzzleData(newPuzzle);
                                 setPuzzleVersion(v => v + 1);
@@ -851,6 +965,28 @@ const App: React.FC = () => {
                                                 </button>
                                             </div>
                                         )}
+                                        {/* Real-time Gemini AI Clue Sync Feedback */}
+                                        {isAiClueSyncing && (
+                                            <div className="w-full mb-3 p-2.5 bg-purple-50 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 rounded-lg flex items-center gap-2.5 text-xs font-semibold shadow-xs animate-pulse">
+                                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-600 animate-ping"></span>
+                                                <span>🤖 ग्रिडवरील बदललेल्या शब्दांचे क्लूज Gemini AI द्वारे आपोआप तयार होत आहेत...</span>
+                                            </div>
+                                        )}
+                                        {aiSyncSuccessMsg && (
+                                            <div className="w-full mb-3 p-2.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 rounded-lg flex items-center justify-between text-xs font-semibold shadow-xs animate-fadeIn">
+                                                <div className="flex items-center gap-2">
+                                                    <span>✨</span>
+                                                    <span>{aiSyncSuccessMsg}</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => setAiSyncSuccessMsg(null)}
+                                                    className="text-emerald-700 hover:text-emerald-900 text-xs font-bold"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        )}
+
                                         <PuzzleControls
                                             onToggleSolution={() => setShowSolution(!showSolution)}
                                             onPrint={handlePrint}

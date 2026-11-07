@@ -238,9 +238,9 @@ export async function generateDenseCrosswordAI(
 ): Promise<AIDenseCrosswordResult> {
   // 1. Fetch and validate candidate grids with guaranteed fresh words and changing masks
   // Works uniformly for all verified puzzle banks (5x5, 6x6, 7x7, 8x8, 9x9, 10x10, 12x12, 15x15)
-  let chosenMaster = getThemedFreshPuzzle(themeId, usedWords, attemptNumber, gridSize, excludeMaskSignature);
+  let chosenMaster = getThemedFreshPuzzle(themeId, usedWords, attemptNumber, gridSize, excludeMaskSignature, blackSquarePercentage);
   if (chosenMaster.grid.length !== gridSize || chosenMaster.gridSize !== gridSize) {
-    chosenMaster = getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature);
+    chosenMaster = getFreshVerifiedPuzzle(usedWords, gridSize, attemptNumber, excludeMaskSignature, blackSquarePercentage);
   }
   let validation = validateGridAgainstLexicon(chosenMaster.grid);
 

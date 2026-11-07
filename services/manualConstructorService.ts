@@ -370,7 +370,9 @@ export async function fetchAiWordSuggestions(
     existingLetters: string = ''
 ): Promise<WordSuggestion[]> {
     try {
-        const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
+        const key = (typeof process !== 'undefined' && process?.env)
+            ? (process.env.GEMINI_API_KEY || process.env.API_KEY)
+            : undefined;
         if (!key || key === 'PLACEHOLDER_API_KEY') {
             return [];
         }

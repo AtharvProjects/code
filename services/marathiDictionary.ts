@@ -1606,6 +1606,7 @@ export const MARATHI_DICTIONARY: Record<string, string> = {
     "मगर": "नदी वा पाण्यात राहणारा मोठा जलचर सरपटणारा प्राणी",
     "मट": "काी धान्य वा मठ",
     "मटक": "नखरा करणे किंवा हळूच बसणे",
+    "मटकी": "मोड आणून उसळ बनवले जाणारे लहान चॉकलेटी कडधान्य",
     "मठ": "संन्याशांचे वास्तव्य किंवा आश्रम",
     "मड": "मृतदेह, मढे वा मातीचे भांडे",
     "मडके": "मातीचे पाण्याचे लहान भांडे",
@@ -1938,6 +1939,7 @@ export const MARATHI_DICTIONARY: Record<string, string> = {
     "वास्तव": "खरे सत्य, प्रत्यक्ष परिस्थिती",
     "वास्तववादी": "काल्पनिक न राहता प्रत्यक्ष परिस्थिती स्वीकारणारा",
     "वाहक": "प्रवाशांचे तिकीट देणारा किंवा भार वाहून नेणारा",
+    "वाल": "वरण किंवा उसळीसाठी वापरले जाणारे एक चवदार कडधान्य, बिरड्यांची उसळ",
     "विक्रेता": "मालाची विक्री करणारा व्यापारी किंवा दुकानदार",
     "विचार": "मनात येणारी नवनवीन कल्पना वा चिंतन",
     "विचारप्रणाली": "विशेष तत्त्वांवर आधारलेली विचारसरणी वा तात्त्विक चौकट",
@@ -2832,6 +2834,8 @@ export const SMART_WORD_CLUES: Record<string, string> = {
     "तृप्ती": "मनाची मिळालेली पूर्ण शांतता, आनंद वा समाधान",
     "किर्ती": "सर्वत्र पसरलेली प्रसिद्धी, लौकिक वा ख्याती",
     "वीट": "घर वा इमारत बांधण्यासाठी वापरली जाणारी भाजलेली मातीची आयताकृती वडी",
+    "वाल": "वरण किंवा उसळीसाठी वापरले जाणारे एक चवदार कडधान्य, बिरड्यांची उसळ",
+    "मटकी": "मोड आणून उसळ बनवले जाणारे लहान चॉकलेटी कडधान्य",
     "सूड": "शत्रूवर घेतलेला बदला, वैर, प्रतिशोध",
     "सुड": "शत्रूवर घेतलेला बदला, वैर, प्रतिशोध",
     "शीत": "शिजवलेला भाताचा मऊ दाणा किंवा थंडगार",
@@ -2910,15 +2914,14 @@ export const SMART_WORD_CLUES: Record<string, string> = {
     "साब": "पुरावा, सिद्धता किंवा सापडलेली वस्तू"
 };
 
+import { guardFirstWordIntegrity, validateDevanagariClueIntegrity } from './marathiClueSanitizer';
+export { guardFirstWordIntegrity, validateDevanagariClueIntegrity };
+
 const devanagariNonWord = '[^\\u0900-\\u097F\\u200C\\u200D]';
 
 export function cleanClue(word: string, clue: string): string {
     const cleanWord = (word || '').trim();
     if (!clue || !cleanWord || cleanWord.length < 2) return clue;
-
-    if (SMART_WORD_CLUES[cleanWord]) {
-        return SMART_WORD_CLUES[cleanWord];
-    }
 
     let cleaned = clue.trim();
     const escaped = cleanWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2946,10 +2949,13 @@ export function cleanClue(word: string, clue: string): string {
         cleaned = cleaned.replace(wholeWordRegex, '$1ही गोष्ट');
     }
 
-    // Clean formatting and strip trailing trailing connectors without truncating words
+    // Clean formatting and strip dangling connectors without truncating legitimate Marathi words
     cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
     cleaned = cleaned.replace(/\s+(?:वा|किंवा|अथवा|आणि)\s*$/gi, '');
-    cleaned = cleaned.replace(/^[:;\-–=\s,वा|किंवा]+/, '').replace(/[:;\-–=\s,वा|किंवा]+$/, '').trim();
+    cleaned = cleaned.replace(/^[:;\-–=,\s]+/, '').replace(/[:;\-–=,\s]+$/, '').trim();
+
+    // Guard first word against any accidental truncation
+    cleaned = guardFirstWordIntegrity(cleanWord, clue, cleaned);
 
     return cleaned || (MARATHI_DICTIONARY[cleanWord] || SMART_WORD_CLUES[cleanWord] || '');
 }
@@ -3018,6 +3024,8 @@ export function sanitizeClue(word: string, rawClue: string): string {
     cleaned = cleaned.replace(/\[.*?\]/g, ''); 
     cleaned = cleaned.replace(/\s*\([०-९0-9]+\)\s*$/g, '');
     cleaned = cleaned.replace(/\([०-९0-9]+\)/g, '');
+    cleaned = cleaned.replace(/^[\d\u0966-\u096F]+[\.\)\-\:\s]+/g, '').trim();
+    cleaned = cleaned.replace(/^[\u2022\u25AA\u25CF\u2023\u2043\*\-\_\>\»\⁃\–\—\s]+/g, '').trim();
     cleaned = cleaned.replace(/संकेतावरून ओळखा\s*/gi, '');
     cleaned = cleaned.replace(/मराठी शब्दार्थ\s*/gi, '');
     cleaned = cleaned.replace(/अस्सल मराठी शब्दार्थ\s*/gi, '');
@@ -3036,9 +3044,9 @@ export function sanitizeClue(word: string, rawClue: string): string {
     // 4. Remove prohibited full generic template phrases only (DO NOT strip individual words like reference or feature)
     cleaned = cleaned.replace(/वाचनात व व्यवहारात येणारा अर्थपूर्ण मराठी शब्दार्थ/gi, '');
     cleaned = cleaned.replace(/लोकसंस्कृती वा व्यवहारातील प्रचलित मूळ भाव/gi, '');
-    cleaned = cleaned.replace(/['"‘“]?[^\s'"]+['"<ctrl42>]?\s*आद्याक्षराचा विशिष्ट भावार्थ व वाच्यार्थ/gi, '');
+    cleaned = cleaned.replace(/['"‘“]?[^\s'"]+['"‘“’”]?\s*आद्याक्षराचा विशिष्ट भावार्थ व वाच्यार्थ/gi, '');
     cleaned = cleaned.replace(/आद्याक्षराचा विशिष्ट भावार्थ व वाच्यार्थ/gi, '');
-    cleaned = cleaned.replace(/['"‘“]?[^\s'"]+['"<ctrl42>]?\s*अक्षरापासून सुरू होणारा/gi, '');
+    cleaned = cleaned.replace(/['"‘“]?[^\s'"]+['"‘“’”]?\s*अक्षरापासून सुरू होणारा/gi, '');
     cleaned = cleaned.replace(/अस्सल मराठी भाषेतील सुस्पष्ट व अर्थपूर्ण संकल्पना/gi, '');
     cleaned = cleaned.replace(/तीन अक्षरांचा अर्थपूर्ण व सुस्पष्ट देवनागरी शब्द/gi, '');
     cleaned = cleaned.replace(/दोन अक्षरांचा सुगम व प्रचलित मराठी शब्द/gi, '');
@@ -3052,7 +3060,9 @@ export function sanitizeClue(word: string, rawClue: string): string {
 
     // Clean surrounding stray punctuation
     cleaned = cleaned.trim().replace(/^[:;\-–=\s]+/, '').replace(/[:;\-–=\s]+$/, '').trim();
-    cleaned = cleaned.replace(/^[\u093E-\u094C\u094D]+/, '').trim();
+
+    // Guard first word and matra integrity permanently
+    cleaned = guardFirstWordIntegrity(cleanWord, rawClue, cleaned);
 
     if (!cleaned) {
         if (cleanWord) {

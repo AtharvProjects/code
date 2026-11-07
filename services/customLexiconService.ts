@@ -40,8 +40,8 @@ export function cleanDevanagariWord(raw: string): string {
     if (!raw) return '';
     // Trim whitespace and remove quotes, brackets, numbers, bullets, list markers
     let cleaned = raw.trim()
-        .replace(/^[\d\u0966-\u096F\.\-\*\•\)\(\[\]\{\}\>\:\,\;\'\"\»\⁃\–\—\t]+/g, '')
-        .replace(/[\d\u0966-\u096F\.\-\*\•\)\(\[\]\{\}\>\:\,\;\'\"\»\⁃\–\—\t]+$/g, '')
+        .replace(/^[\d\u0966-\u096F\.\-\*\u2022\)\(\[\]\{\}\>\:\,\;\'\"\»\⁃\–\—\t]+/g, '')
+        .replace(/[\d\u0966-\u096F\.\-\*\u2022\)\(\[\]\{\}\>\:\,\;\'\"\»\⁃\–\—\t]+$/g, '')
         .trim();
 
     // Keep only valid Devanagari characters, matras, viramas, anusvars, nuktas
@@ -70,7 +70,7 @@ export function parseRawTextToWords(rawText: string, source: 'user_pasted' | 'fi
 
         // Strip leading list bullet/numbering: e.g. '1.', '१.', '1)', '१)', '•', '*', '-'
         line = line.replace(/^[\d\u0966-\u096F]+[\.\)\-\:\s]+/g, '').trim();
-        line = line.replace(/^[\•\*\-\_\>\»\⁃\–\—\s]+/g, '').trim();
+        line = line.replace(/^[\u2022\*\-\_\>\»\⁃\–\—\s]+/g, '').trim();
         if (!line) continue;
 
         let isDef = false;
@@ -144,7 +144,7 @@ export function parseRawTextToWords(rawText: string, source: 'user_pasted' | 'fi
             });
         } else {
             // It's a word list separated by commas, spaces, semicolons, tabs, dandas, bullets, brackets, etc.
-            const tokens = line.split(/[\s\,\;\।\t\•\*\_\(\)\[\]\{\}\<\>\/\\\|\n\r]+/);
+            const tokens = line.split(/[\s\,\;\।\t\u2022\*\_\(\)\[\]\{\}\<\>\/\\\|\n\r]+/);
             for (const token of tokens) {
                 const cleaned = cleanDevanagariWord(token);
                 if (cleaned) {
