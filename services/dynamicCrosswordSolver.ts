@@ -696,6 +696,13 @@ let cachedDefaultByLen: Map<number, WordEntry[]> | null = null;
 let cachedDefaultIndex: Map<string, WordEntry[]> | null = null;
 let cachedDefaultMap: Map<string, WordEntry> | null = null;
 
+export function invalidateWordCatalogCache(): void {
+    cachedDefaultCatalog = null;
+    cachedDefaultByLen = null;
+    cachedDefaultIndex = null;
+    cachedDefaultMap = null;
+}
+
 function getCatalogIndices(catalog: WordEntry[]) {
     if (catalog === cachedDefaultCatalog && cachedDefaultIndex && cachedDefaultByLen && cachedDefaultMap) {
         return {

@@ -24,6 +24,7 @@ interface PuzzleSettingsFormProps {
     onOpenHistoryModal?: () => void;
     downloadedCount?: number;
     blockedWordsCount?: number;
+    totalLexiconCount?: number;
 }
 
 export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
@@ -47,6 +48,7 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
     onOpenHistoryModal,
     downloadedCount = 0,
     blockedWordsCount = 0,
+    totalLexiconCount,
 }) => {
 
     const [typedSize, setTypedSize] = React.useState<string>(String(gridSize));
@@ -457,7 +459,7 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                                 : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
                         }`}>
                             <span>{puzzleSource === 'ai' ? '🤖' : '📚'}</span>
-                            <span>{puzzleSource === 'ai' ? 'Gemini AI जनरेटर (AI Clues)' : '८,०००+ शब्दभांडार डेटाबेस'}</span>
+                            <span>{puzzleSource === 'ai' ? 'Gemini AI जनरेटर (AI Clues)' : `${totalLexiconCount ? toDevanagari(totalLexiconCount) : '८,०००+'} शब्दभांडार डेटाबेस`}</span>
                         </span>
                         {onOpenHistoryModal ? (
                             <button
@@ -521,7 +523,7 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                             onClick={onDatabaseGenerate}
                             disabled={isAiLoading}
                             className="py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold rounded-xl shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2.5 text-xs sm:text-sm active:scale-[0.99]"
-                            title="८,०००+ अधिकृत मराठी शब्दभांडारातून तयार केलेले वृत्तपत्र दर्जाचे कोडे लोड करा"
+                            title={`${totalLexiconCount ? toDevanagari(totalLexiconCount) : '८,०००+'} अधिकृत मराठी शब्दभांडारातून तयार केलेले वृत्तपत्र दर्जाचे कोडे लोड करा`}
                         >
                             <span className="text-base">📚</span>
                             <span>शब्दभांडार डेटाबेसमधून कोडे मिळवा</span>

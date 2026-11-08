@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { IMPORTED_VOCABULARY_MAP, IMPORTED_VOCABULARY_WORDS } from '../services/importedVocabularyDatabase';
-import { getLearnedLexiconStats, exportInfiniteLexiconJSON } from '../services/infiniteLexiconService';
+import { getLearnedLexiconStats, exportInfiniteLexiconJSON, getTotalAuthenticWordsCount } from '../services/infiniteLexiconService';
 import { MARATHI_14_CATEGORIES, get14CategoryBreakdownStats } from '../services/marathiCategoriesDatabase';
 import { toDevanagari } from './PrintableShabdavedhPDF';
 import { BookOpenIcon, CheckIcon, SearchIcon, WandIcon } from './Icons';
@@ -93,7 +93,7 @@ export const VocabularyInspectorModal: React.FC<VocabularyInspectorModalProps> =
                         </span>
                         <div>
                             <h2 className="text-lg font-black tracking-wide flex items-center gap-2">
-                                <span>{toDevanagari(IMPORTED_VOCABULARY_WORDS.length)} अधिकृत मराठी शब्दभांडार निरिक्षक</span>
+                                <span>{toDevanagari(getTotalAuthenticWordsCount())} अधिकृत मराठी शब्दभांडार निरिक्षक</span>
                                 <span className="text-xs bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-full shadow-xs">
                                     १४ घटक समाविष्ट
                                 </span>

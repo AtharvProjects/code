@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { getMarathiWordClue, generateSmartMarathiClue, sanitizeClue, isGenericClue, isAuthenticMarathiWord, FORBIDDEN_JUNK_WORDS, isSyntheticSuffixWord } from './services/marathiDictionary';
+import { getMarathiWordClue, generateSmartMarathiClue, sanitizeClue, isGenericClue, isAuthenticMarathiWord, FORBIDDEN_JUNK_WORDS, isSyntheticSuffixWord, MARATHI_DICTIONARY } from './services/marathiDictionary';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -489,6 +489,130 @@ Output ONLY JSON conforming to the schema.`;
   } catch (_error: any) {
     return res.json({ wordClues: getFallbackClues() });
   }
+});
+
+// ==========================================
+// 5. Backend Persistent Lexicon Repository
+// ==========================================
+const DATA_DIR = path.resolve(__dirname, 'data');
+const BACKEND_LEXICON_FILE = path.join(DATA_DIR, 'persistent_learned_lexicon.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (e) {
+    console.error('Failed to create data directory:', e);
+  }
+}
+
+// In-memory store of learned words on server
+const backendLearnedWordsMap = new Map<string, { word: string; clue: string; addedAt: number; source?: string }>();
+
+// Load previously saved learned words from disk
+if (fs.existsSync(BACKEND_LEXICON_FILE)) {
+  try {
+    const raw = fs.readFileSync(BACKEND_LEXICON_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      parsed.forEach(item => {
+        if (item && item.word && item.clue) {
+          const w = item.word.trim();
+          backendLearnedWordsMap.set(w, item);
+          MARATHI_DICTIONARY[w] = item.clue.trim();
+        }
+      });
+      console.log(`[Backend Lexicon] Loaded ${backendLearnedWordsMap.size} persistent words from disk.`);
+    }
+  } catch (e) {
+    console.warn('[Backend Lexicon] Could not load persistent lexicon from file:', e);
+  }
+}
+
+// Endpoint: Save words permanently to backend core lexicon
+app.post('/api/lexicon/save-words', (req, res) => {
+  try {
+    const { words } = req.body;
+    if (!Array.isArray(words) || words.length === 0) {
+      return res.json({
+        success: true,
+        addedCount: 0,
+        duplicatesSkipped: 0,
+        totalWords: Object.keys(MARATHI_DICTIONARY).length
+      });
+    }
+
+    let addedCount = 0;
+    let duplicatesSkipped = 0;
+    const newlyAddedList: string[] = [];
+
+    for (const item of words) {
+      if (!item || !item.word) continue;
+      const cleanWord = item.word.trim();
+      const rawClue = (item.clue || '').trim();
+      const cleanClue = sanitizeClue(cleanWord, rawClue) || getMarathiWordClue(cleanWord) || generateSmartMarathiClue(cleanWord) || 'अस्सल संदर्भ';
+
+      // Skip words with invalid characters or grammar violations
+      if (cleanWord.length < 2 || cleanWord.startsWith('ळ') || cleanWord.startsWith('ण') || cleanWord.includes(' ')) {
+        continue;
+      }
+      if (FORBIDDEN_JUNK_WORDS.has(cleanWord) || isSyntheticSuffixWord(cleanWord)) {
+        continue;
+      }
+
+      // Check if word already exists in dictionary or backend persistent map
+      const isAlreadyInDict = Boolean(MARATHI_DICTIONARY[cleanWord] || backendLearnedWordsMap.has(cleanWord));
+      if (isAlreadyInDict) {
+        duplicatesSkipped++;
+        // If existing word had generic clue, upgrade with new clue
+        if (!MARATHI_DICTIONARY[cleanWord] || isGenericClue(MARATHI_DICTIONARY[cleanWord])) {
+          MARATHI_DICTIONARY[cleanWord] = cleanClue;
+        }
+      } else {
+        // Genuinely NEW word!
+        addedCount++;
+        newlyAddedList.push(cleanWord);
+        MARATHI_DICTIONARY[cleanWord] = cleanClue;
+        backendLearnedWordsMap.set(cleanWord, {
+          word: cleanWord,
+          clue: cleanClue,
+          addedAt: Date.now(),
+          source: 'manual_constructor_user'
+        });
+      }
+    }
+
+    // Persist to disk file if any new words were added
+    if (addedCount > 0) {
+      try {
+        const listToSave = Array.from(backendLearnedWordsMap.values());
+        fs.writeFileSync(BACKEND_LEXICON_FILE, JSON.stringify(listToSave, null, 2), 'utf-8');
+        console.log(`[Backend Lexicon] Saved ${addedCount} new words to ${BACKEND_LEXICON_FILE}. Total persistent: ${backendLearnedWordsMap.size}`);
+      } catch (err) {
+        console.error('[Backend Lexicon] Error writing to file:', err);
+      }
+    }
+
+    const totalWords = Object.keys(MARATHI_DICTIONARY).length;
+    return res.json({
+      success: true,
+      addedCount,
+      duplicatesSkipped,
+      newWords: newlyAddedList,
+      totalWords
+    });
+  } catch (error: any) {
+    console.error('[save-words error]', error);
+    return res.status(500).json({ error: error?.message || 'Failed to save words' });
+  }
+});
+
+// Endpoint: Get backend lexicon statistics
+app.get('/api/lexicon/stats', (_req, res) => {
+  res.json({
+    backendLearnedCount: backendLearnedWordsMap.size,
+    totalDictionaryWords: Object.keys(MARATHI_DICTIONARY).length
+  });
 });
 
 // Serve frontend with Vite middleware in dev or static dist in prod

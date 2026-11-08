@@ -15,7 +15,7 @@ import { LimcaRecordCrosswordStudio } from './components/LimcaRecordCrosswordStu
 import { ModifiedWordsCluePanel } from './components/ModifiedWordsCluePanel';
 import { VocabularyInspectorModal } from './components/VocabularyInspectorModal';
 import { IMPORTED_VOCABULARY_WORDS } from './services/importedVocabularyDatabase';
-import { saveWordToInfiniteLexicon } from './services/infiniteLexiconService';
+import { saveWordToInfiniteLexicon, getTotalAuthenticWordsCount, saveManualPuzzleWordsToLexicon } from './services/infiniteLexiconService';
 import {
     getDefaultShabdavedhPuzzle,
     buildPuzzleFromMaster,
@@ -75,6 +75,19 @@ const App: React.FC = () => {
     const aiFetchedWordsCacheRef = useRef<Map<string, string>>(new Map());
     const [showTransferToManualModal, setShowTransferToManualModal] = useState(false);
     const [showVocabModal, setShowVocabModal] = useState(false);
+    const [totalLexiconCount, setTotalLexiconCount] = useState(() => getTotalAuthenticWordsCount());
+
+    useEffect(() => {
+        const handleLexiconUpdated = (e: any) => {
+            if (e?.detail?.totalCount) {
+                setTotalLexiconCount(e.detail.totalCount);
+            } else {
+                setTotalLexiconCount(getTotalAuthenticWordsCount());
+            }
+        };
+        window.addEventListener('shabdavedh_lexicon_updated', handleLexiconUpdated);
+        return () => window.removeEventListener('shabdavedh_lexicon_updated', handleLexiconUpdated);
+    }, []);
 
     const [activeMode, setActiveMode] = useState<'auto' | 'manual' | 'limca'>(() => {
         try {
@@ -668,7 +681,19 @@ const App: React.FC = () => {
             const newPuzzle = createPuzzleDataFromGrid(puzzleData.grid, combinedWordClues);
             setPuzzleData(newPuzzle);
             setPuzzleVersion(v => v + 1);
-            setAttemptSuccessMsg(`कोडे यशस्वीरीत्या अद्यतनित झाले! ग्रिडवरील बदललेल्या सर्व ${toDevanagari(uniqueWords.length)} शब्दांचे एआय द्वारे अचूक मराठी क्लूज तयार केले गेले.`);
+
+            // Persist words to infinite and backend lexicon
+            try {
+                const saveResult = await saveManualPuzzleWordsToLexicon(puzzleData.grid, currentCluesMap);
+                if (saveResult.newWordsAdded > 0) {
+                    setTotalLexiconCount(saveResult.totalActiveLexiconCount);
+                    setAttemptSuccessMsg(`कोडे यशस्वीरीत्या अद्यतनित झाले! शब्दभांडारात ${toDevanagari(saveResult.newWordsAdded)} नवीन शब्द कायमचे जतन झाले (${toDevanagari(saveResult.duplicatesSkipped)} दुबार शब्द वगळले). एकूण शब्दभांडार: ${toDevanagari(saveResult.totalActiveLexiconCount)}.`);
+                } else {
+                    setAttemptSuccessMsg(`कोडे यशस्वीरीत्या अद्यतनित झाले! ग्रिडवरील सर्व ${toDevanagari(uniqueWords.length)} शब्दांचे अचूक मराठी क्लूज तयार झाले. एकूण शब्दभांडार: ${toDevanagari(saveResult.totalActiveLexiconCount)}.`);
+                }
+            } catch {
+                setAttemptSuccessMsg(`कोडे यशस्वीरीत्या अद्यतनित झाले! ग्रिडवरील बदललेल्या सर्व ${toDevanagari(uniqueWords.length)} शब्दांचे एआय द्वारे अचूक मराठी क्लूज तयार केले गेले.`);
+            }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'कोडे अद्यतनित करण्यात अयशस्वी झाले.';
@@ -797,9 +822,9 @@ const App: React.FC = () => {
                             type="button"
                             onClick={() => setShowVocabModal(true)}
                             className="px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm md:text-base flex items-center gap-2 transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-md cursor-pointer"
-                            title={`एकत्रित ${toDevanagari(IMPORTED_VOCABULARY_WORDS.length)} शब्दभांडार सूची व निरिक्षक पहा`}
+                            title={`एकत्रित ${toDevanagari(totalLexiconCount)} शब्दभांडार सूची व निरिक्षक पहा`}
                         >
-                            <span>📚 {toDevanagari(IMPORTED_VOCABULARY_WORDS.length)} शब्दभांडार निरिक्षक</span>
+                            <span>📚 {toDevanagari(totalLexiconCount)} शब्दभांडार निरिक्षक</span>
                         </button>
                     </div>
                 </header>
@@ -817,6 +842,7 @@ const App: React.FC = () => {
                             onPrintPuzzle={handlePrintManualPuzzle}
                             initialGridSize={gridSize}
                             currentAutoPuzzle={puzzleData}
+                            onLexiconUpdated={(cnt) => setTotalLexiconCount(cnt)}
                         />
                     </div>
                 ) : (
@@ -836,6 +862,7 @@ const App: React.FC = () => {
                             attemptCount={attemptCount}
                             downloadedCount={historyStats.totalDownloadedCount}
                             blockedWordsCount={historyStats.blockedWordsCount}
+                            totalLexiconCount={totalLexiconCount}
                             onOpenHistoryModal={() => setShowHistoryModal(true)}
                             attemptSuccessMsg={attemptSuccessMsg}
                             onShuffleMask={handleShuffleMask}

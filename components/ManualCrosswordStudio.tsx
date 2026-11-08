@@ -10,6 +10,7 @@ import {
 import { toDevanagari } from './PrintableShabdavedhPDF';
 import { sanitizeClue, getMarathiWordClue, isGenericClue, generateSmartMarathiClue } from '../services/marathiDictionary';
 import { getCluesForWords } from '../services/geminiService';
+import { saveManualPuzzleWordsToLexicon } from '../services/infiniteLexiconService';
 import { CrosswordGrid } from './CrosswordGrid';
 import { ClueList } from './ClueList';
 import { MarathiOnScreenKeyboard } from './MarathiOnScreenKeyboard';
@@ -29,6 +30,7 @@ interface ManualCrosswordStudioProps {
     onPrintPuzzle: (puzzle: PuzzleData) => void;
     initialGridSize?: number;
     currentAutoPuzzle?: PuzzleData | null;
+    onLexiconUpdated?: (count: number) => void;
 }
 
 const MANUAL_STORAGE_KEY = 'marathiManualCrosswordState_v2';
@@ -37,7 +39,8 @@ export const ManualCrosswordStudio: React.FC<ManualCrosswordStudioProps> = ({
     onLoadIntoSolver,
     onPrintPuzzle,
     initialGridSize = 10,
-    currentAutoPuzzle
+    currentAutoPuzzle,
+    onLexiconUpdated
 }) => {
     // 1. Restore size from localStorage if available
     const [size, setSize] = useState<number>(() => {
@@ -360,6 +363,29 @@ export const ManualCrosswordStudio: React.FC<ManualCrosswordStudioProps> = ({
         onPrintPuzzle(puzzleData);
     };
 
+    const [isUpdatingLexicon, setIsUpdatingLexicon] = useState(false);
+
+    // Save all words and clues from manual grid (full or partial) into backend and local persistent repository
+    const handleUpdatePuzzleAndSaveToBackend = async () => {
+        setIsUpdatingLexicon(true);
+        try {
+            const result = await saveManualPuzzleWordsToLexicon(grid, customClues);
+            if (result.newWordsAdded > 0) {
+                showToast(`🎉 शब्दभांडार अद्यतनित! या कोड्यातील ${toDevanagari(result.newWordsAdded)} नवीन शब्द मूळ शब्दभांडारात कायमचे जतन झाले (${toDevanagari(result.duplicatesSkipped)} दुबार शब्द वगळले). एकूण शब्दभांडार: ${toDevanagari(result.totalActiveLexiconCount)} शब्द.`);
+            } else {
+                showToast(`ℹ️ या कोड्यातील सर्व ${toDevanagari(result.totalPlacedWords)} शब्द आधीच शब्दभांडारात उपस्थित आहेत (दुबार शब्द वगळले). एकूण शब्दभांडार: ${toDevanagari(result.totalActiveLexiconCount)} शब्द.`);
+            }
+            if (onLexiconUpdated) {
+                onLexiconUpdated(result.totalActiveLexiconCount);
+            }
+        } catch (e) {
+            console.error('Error saving manual puzzle words:', e);
+            showToast('कोडे व क्लूज अद्यतनित झाले!');
+        } finally {
+            setIsUpdatingLexicon(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* AI Auto-Puzzle Import Banner */}
@@ -518,6 +544,16 @@ export const ManualCrosswordStudio: React.FC<ManualCrosswordStudioProps> = ({
                         </button>
                         <button
                             type="button"
+                            onClick={handleUpdatePuzzleAndSaveToBackend}
+                            disabled={isUpdatingLexicon}
+                            className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="या कोड्यातील सर्व शब्द व क्लूज मूळ शब्दभांडारात कायमचे जतन करा"
+                        >
+                            <span>💾</span>
+                            <span>{isUpdatingLexicon ? 'जतन होत आहे...' : 'कोडे अद्यतन करा (शब्दभांडारात जतन)'}</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setShowOnScreenKeyboard(!showOnScreenKeyboard)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
                                 showOnScreenKeyboard
@@ -586,10 +622,8 @@ export const ManualCrosswordStudio: React.FC<ManualCrosswordStudioProps> = ({
                         });
                         showToast(`${toDevanagari(newClues.length)} बदललेल्या शब्दांचे अचूक क्लूज लागू झाले!`);
                     }}
-                    onUpdatePuzzle={() => {
-                        showToast('कोडे व क्लूज यशस्वीरीत्या अद्यतनित व जतन झाले!');
-                    }}
-                    isUpdating={isGeneratingClues}
+                    onUpdatePuzzle={handleUpdatePuzzleAndSaveToBackend}
+                    isUpdating={isGeneratingClues || isUpdatingLexicon}
                 />
 
                 {/* The Interactive Crossword Grid */}

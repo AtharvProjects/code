@@ -8,9 +8,12 @@
  * 4. NO Marathi word EVER feels unknown to the app!
  */
 
-import { MARATHI_DICTIONARY, SMART_WORD_CLUES, sanitizeClue } from './marathiDictionary';
+import { MARATHI_DICTIONARY, SMART_WORD_CLUES, sanitizeClue, isAuthenticMarathiWord, getMarathiWordClue, generateSmartMarathiClue, isGenericClue, FORBIDDEN_JUNK_WORDS, FORBIDDEN_AWKWARD_WORDS, isSyntheticSuffixWord } from './marathiDictionary';
 import { USER_WORDS_SET } from './userLexicon1000';
 import { IMPORTED_VOCABULARY_MAP, IMPORTED_VOCABULARY_WORDS } from './importedVocabularyDatabase';
+import { extractPlacedWordsFromGrid } from './crosswordService';
+import { invalidateWordCatalogCache } from './dynamicCrosswordSolver';
+import { GridCell } from '../types';
 
 export interface LearnedWordEntry {
     word: string;
@@ -149,6 +152,172 @@ export function getLearnedLexiconStats(): { learnedCount: number; totalBaseCount
         learnedCount,
         totalBaseCount,
         totalCombinedCount: totalBaseCount + learnedCount
+    };
+}
+
+/**
+ * Computes the grand total count of unique authentic words across all dictionaries,
+ * lexicons, and dynamically learned persistent storage.
+ */
+export function getTotalAuthenticWordsCount(): number {
+    const uniqueSet = new Set<string>();
+    
+    // 1. Core dictionary
+    Object.keys(MARATHI_DICTIONARY).forEach(w => {
+        const clean = w.trim();
+        if (clean.length >= 2 && !FORBIDDEN_JUNK_WORDS.has(clean) && !FORBIDDEN_AWKWARD_WORDS.has(clean) && !isSyntheticSuffixWord(clean)) {
+            uniqueSet.add(clean);
+        }
+    });
+
+    // 2. User 1000 words
+    USER_WORDS_SET.forEach(w => {
+        const clean = w.trim();
+        if (clean.length >= 2 && !FORBIDDEN_JUNK_WORDS.has(clean) && !FORBIDDEN_AWKWARD_WORDS.has(clean) && !isSyntheticSuffixWord(clean)) {
+            uniqueSet.add(clean);
+        }
+    });
+
+    // 3. Imported vocabulary
+    IMPORTED_VOCABULARY_WORDS.forEach(w => {
+        const clean = w.trim();
+        if (clean.length >= 2 && !FORBIDDEN_JUNK_WORDS.has(clean) && !FORBIDDEN_AWKWARD_WORDS.has(clean) && !isSyntheticSuffixWord(clean)) {
+            uniqueSet.add(clean);
+        }
+    });
+
+    // 4. Learned words
+    learnedRegistry.forEach((_val, w) => {
+        const clean = w.trim();
+        if (clean.length >= 2 && !FORBIDDEN_JUNK_WORDS.has(clean) && !FORBIDDEN_AWKWARD_WORDS.has(clean) && !isSyntheticSuffixWord(clean)) {
+            uniqueSet.add(clean);
+        }
+    });
+
+    return uniqueSet.size;
+}
+
+export interface ManualPuzzleSaveResult {
+    totalPlacedWords: number;
+    newWordsAdded: number;
+    duplicatesSkipped: number;
+    newWordList: string[];
+    totalActiveLexiconCount: number;
+}
+
+/**
+ * Extracts all words and clues from a manually constructed (complete or partial) puzzle grid,
+ * de-duplicates against existing words in the repository, permanently persists all new words
+ * and clues to local persistent storage + backend server, invalidates the catalog cache,
+ * and notifies all listeners across the app.
+ */
+export async function saveManualPuzzleWordsToLexicon(
+    grid: GridCell[][],
+    customClues: Map<string, string> = new Map()
+): Promise<ManualPuzzleSaveResult> {
+    if (!grid || grid.length === 0) {
+        return {
+            totalPlacedWords: 0,
+            newWordsAdded: 0,
+            duplicatesSkipped: 0,
+            newWordList: [],
+            totalActiveLexiconCount: getTotalAuthenticWordsCount()
+        };
+    }
+
+    // 1. Extract all placed words from the current grid (across and down, length >= 2)
+    const placed = extractPlacedWordsFromGrid(grid);
+    const uniquePlacedMap = new Map<string, string>();
+
+    for (const p of placed) {
+        const cleanWord = (p.word || '').trim();
+        // Skip single aksharas or words with invalid starts
+        if (cleanWord.length < 2 || cleanWord.startsWith('ळ') || cleanWord.startsWith('ण') || cleanWord.includes(' ')) {
+            continue;
+        }
+        if (FORBIDDEN_JUNK_WORDS.has(cleanWord) || isSyntheticSuffixWord(cleanWord)) {
+            continue;
+        }
+
+        if (!uniquePlacedMap.has(cleanWord)) {
+            let rawClue = customClues.get(cleanWord) || '';
+            if (!rawClue || isGenericClue(rawClue)) {
+                rawClue = getMarathiWordClue(cleanWord) || MARATHI_DICTIONARY[cleanWord] || generateSmartMarathiClue(cleanWord) || 'अस्सल संदर्भ';
+            }
+            const cleanClue = sanitizeClue(cleanWord, rawClue);
+            uniquePlacedMap.set(cleanWord, cleanClue);
+        }
+    }
+
+    const uniqueWordsList = Array.from(uniquePlacedMap.entries());
+    const totalPlacedWords = uniqueWordsList.length;
+
+    // 2. Identify which words are genuinely NEW vs duplicates
+    const newWordsToSave: { word: string; clue: string }[] = [];
+    let duplicatesSkipped = 0;
+
+    for (const [w, clue] of uniqueWordsList) {
+        const alreadyInCoreDict = Boolean(MARATHI_DICTIONARY[w]);
+        const alreadyInUserSet = USER_WORDS_SET.has(w);
+        const alreadyInImported = Boolean(IMPORTED_VOCABULARY_MAP[w]);
+        const alreadyLearned = learnedRegistry.has(w);
+
+        // If it's already in the vocabulary, update clue if current is better, but count as duplicate
+        if (alreadyInCoreDict || alreadyInUserSet || alreadyInImported || alreadyLearned) {
+            duplicatesSkipped++;
+            if (clue && (!MARATHI_DICTIONARY[w] || isGenericClue(MARATHI_DICTIONARY[w]))) {
+                MARATHI_DICTIONARY[w] = clue;
+                SMART_WORD_CLUES[w] = clue;
+            }
+        } else {
+            // Brand new word!
+            newWordsToSave.push({ word: w, clue });
+        }
+    }
+
+    // 3. Save new words locally to persistent infinite lexicon
+    if (newWordsToSave.length > 0) {
+        batchSaveWordsToInfiniteLexicon(newWordsToSave, 'manual_constructor_user');
+    }
+
+    // 4. Send ALL placed words (and specifically new ones) to backend persistent storage
+    if (typeof window !== 'undefined') {
+        try {
+            const allWordsToSend = uniqueWordsList.map(([word, clue]) => ({ word, clue }));
+            await fetch('/api/lexicon/save-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ words: allWordsToSend })
+            });
+        } catch (e) {
+            console.warn('Backend /api/lexicon/save-words sync warning (saved locally):', e);
+        }
+    }
+
+    // 5. Invalidate solver's catalog cache so newly added words are immediately available for future puzzles
+    invalidateWordCatalogCache();
+
+    const totalActiveLexiconCount = getTotalAuthenticWordsCount();
+
+    // 6. Broadcast event to update homepage badges and counters in real time
+    if (typeof window !== 'undefined') {
+        try {
+            window.dispatchEvent(new CustomEvent('shabdavedh_lexicon_updated', {
+                detail: {
+                    totalCount: totalActiveLexiconCount,
+                    newWordsAdded: newWordsToSave.length,
+                    duplicatesSkipped
+                }
+            }));
+        } catch {}
+    }
+
+    return {
+        totalPlacedWords,
+        newWordsAdded: newWordsToSave.length,
+        duplicatesSkipped,
+        newWordList: newWordsToSave.map(w => w.word),
+        totalActiveLexiconCount
     };
 }
 
