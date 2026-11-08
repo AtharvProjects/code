@@ -21,6 +21,9 @@ interface PuzzleSettingsFormProps {
     selectedTheme?: string;
     setSelectedTheme?: (theme: string) => void;
     onOpenLimcaStudio?: () => void;
+    onOpenHistoryModal?: () => void;
+    downloadedCount?: number;
+    blockedWordsCount?: number;
 }
 
 export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
@@ -41,6 +44,9 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
     selectedTheme = 'auto',
     setSelectedTheme,
     onOpenLimcaStudio,
+    onOpenHistoryModal,
+    downloadedCount = 0,
+    blockedWordsCount = 0,
 }) => {
 
     const [typedSize, setTypedSize] = React.useState<string>(String(gridSize));
@@ -453,11 +459,35 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                             <span>{puzzleSource === 'ai' ? '🤖' : '📚'}</span>
                             <span>{puzzleSource === 'ai' ? 'Gemini AI जनरेटर (AI Clues)' : '८,०००+ शब्दभांडार डेटाबेस'}</span>
                         </span>
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
-                            प्रयत्न #{attemptCount}
-                        </span>
+                        {onOpenHistoryModal ? (
+                            <button
+                                type="button"
+                                onClick={onOpenHistoryModal}
+                                title="१०० प्रयत्न शब्द संरक्षण व डाऊनलोड इतिहास पहा"
+                                className="flex items-center gap-1.5 font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer text-xs"
+                            >
+                                <span>🛡️ प्रयत्न #{attemptCount}</span>
+                                <span className="text-[10px] bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-100 px-1 rounded font-semibold">
+                                    डाऊनलोड इतिहास
+                                </span>
+                            </button>
+                        ) : (
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                                प्रयत्न #{attemptCount}
+                            </span>
+                        )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onOpenHistoryModal}
+                            title="१०० प्रयत्न शब्द संरक्षण व डाऊनलोड इतिहास पहा"
+                            className="text-[11px] text-indigo-700 dark:text-indigo-300 font-semibold bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors"
+                        >
+                            <span>🔒 १०० प्रयत्न नियम:</span>
+                            <span className="font-bold text-rose-600 dark:text-rose-400">{toDevanagari(blockedWordsCount)} शब्द सुरक्षित</span>
+                            <span className="text-[10px] text-slate-400">(शून्य दुबार शब्द)</span>
+                        </button>
                         <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
                             ✓ स्वयंचलित Gemini AI क्लू सिंक
                         </span>

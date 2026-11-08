@@ -9242,20 +9242,29 @@ export function getFreshVerifiedPuzzle(
         candidates = cleanCandidates;
     }
 
+    // Strict 100-attempt rule: Prioritize candidate puzzles with ZERO overlap with used words (from last 100 downloaded puzzles)
+    const isWordUsed = (w: string) => (usedWords && typeof usedWords.has === 'function') ? usedWords.has(w) : false;
+    if (usedWords && usedWords.size > 0) {
+        const zeroOverlapCandidates = candidates.filter(p => p.clues.every(c => !isWordUsed(c.word)));
+        if (zeroOverlapCandidates.length > 0) {
+            candidates = zeroOverlapCandidates;
+        }
+    }
+
     // Sort candidates by targetBlackPct proximity if provided
     if (targetBlackPct !== undefined && targetBlackPct > 0) {
         candidates = [...candidates].sort((a, b) => {
             const diffA = Math.abs(getBlackPct(a) - targetBlackPct);
             const diffB = Math.abs(getBlackPct(b) - targetBlackPct);
             if (diffA !== diffB) return diffA - diffB;
-            const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
-            const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+            const overlapA = a.clues.filter(c => isWordUsed(c.word)).length;
+            const overlapB = b.clues.filter(c => isWordUsed(c.word)).length;
             return overlapA - overlapB;
         });
     } else {
         candidates = [...candidates].sort((a, b) => {
-            const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
-            const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+            const overlapA = a.clues.filter(c => isWordUsed(c.word)).length;
+            const overlapB = b.clues.filter(c => isWordUsed(c.word)).length;
             return overlapA - overlapB;
         });
     }
@@ -9340,6 +9349,13 @@ export function getThemedFreshPuzzle(
             const cleanMatching = matchingList.filter(isMasterPuzzleClean);
             if (cleanMatching.length > 0) matchingList = cleanMatching;
 
+            // Strict 100-attempt rule: Filter for zero overlap with blocked words
+            const isWordUsedInTheme = (w: string) => (usedWords && typeof usedWords.has === 'function') ? usedWords.has(w) : false;
+            if (usedWords && usedWords.size > 0) {
+                const zeroOverlap = matchingList.filter(p => p.clues.every(c => !isWordUsedInTheme(c.word)));
+                if (zeroOverlap.length > 0) matchingList = zeroOverlap;
+            }
+
             if (excludeMaskSignature && matchingList.length > 1) {
                 const diffMask = matchingList.filter(p => getSig(p) !== excludeMaskSignature);
                 if (diffMask.length > 0) matchingList = diffMask;
@@ -9351,14 +9367,14 @@ export function getThemedFreshPuzzle(
                     const diffA = Math.abs(getBlackPct(a) - targetBlackPct);
                     const diffB = Math.abs(getBlackPct(b) - targetBlackPct);
                     if (diffA !== diffB) return diffA - diffB;
-                    const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
-                    const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+                    const overlapA = a.clues.filter(c => isWordUsedInTheme(c.word)).length;
+                    const overlapB = b.clues.filter(c => isWordUsedInTheme(c.word)).length;
                     return overlapA - overlapB;
                 });
             } else {
                 matchingList = [...matchingList].sort((a, b) => {
-                    const overlapA = a.clues.filter(c => usedWords.has(c.word)).length;
-                    const overlapB = b.clues.filter(c => usedWords.has(c.word)).length;
+                    const overlapA = a.clues.filter(c => isWordUsedInTheme(c.word)).length;
+                    const overlapB = b.clues.filter(c => isWordUsedInTheme(c.word)).length;
                     return overlapA - overlapB;
                 });
             }

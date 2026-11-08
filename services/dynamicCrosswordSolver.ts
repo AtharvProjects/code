@@ -841,7 +841,7 @@ export function solveGridSlotsFast(
 
         for (const s of slots) {
             if (s.cells.every(c => matrix[c.r][c.c] !== null)) continue;
-            const candidates = getCandidates(s).filter(w => !assignedWords.has(w.word));
+            const candidates = getCandidates(s).filter(w => !assignedWords.has(w.word) && !usedWords.has(w.word));
             if (candidates.length === 0) return false;
 
             if (candidates.length < minCand) {
@@ -853,30 +853,27 @@ export function solveGridSlotsFast(
         }
 
         if (!bestSlot || !bestCandidates) {
-            // All slots filled; verify all formed words are in catalog and unique (no duplicates)
+            // All slots filled; verify all formed words are in catalog, unused, and unique (no duplicates)
             const filledWords = new Set<string>();
             for (const s of slots) {
                 const formed = s.cells.map(c => matrix[c.r][c.c]!).join('');
-                if (!catalogMap.has(formed) || filledWords.has(formed)) return false;
+                if (!catalogMap.has(formed) || filledWords.has(formed) || usedWords.has(formed)) return false;
                 filledWords.add(formed);
             }
             return true;
         }
 
         // Sort candidates: themed words first, then unused words, then seeded shuffle
-        const themed = bestCandidates.filter(w => themeSeeds.has(w.word));
-        const nonThemed = bestCandidates.filter(w => !themeSeeds.has(w.word));
+        // Strictly eliminate all used words per the 100-attempt rule
+        const themed = bestCandidates.filter(w => themeSeeds.has(w.word) && !usedWords.has(w.word));
+        const nonThemed = bestCandidates.filter(w => !themeSeeds.has(w.word) && !usedWords.has(w.word));
 
-        const unusedThemed = themed.filter(w => !usedWords.has(w.word)).sort(() => rnd() - 0.5);
-        const usedThemed = themed.filter(w => usedWords.has(w.word)).sort(() => rnd() - 0.5);
-        const unusedNon = nonThemed.filter(w => !usedWords.has(w.word)).sort(() => rnd() - 0.5);
-        const usedNon = nonThemed.filter(w => usedWords.has(w.word)).sort(() => rnd() - 0.5);
+        const unusedThemed = themed.sort(() => rnd() - 0.5);
+        const unusedNon = nonThemed.sort(() => rnd() - 0.5);
 
         const candidatesToTry = [
             ...unusedThemed,
-            ...unusedNon,
-            ...usedThemed,
-            ...usedNon
+            ...unusedNon
         ].slice(0, 40);
 
         for (const cand of candidatesToTry) {
@@ -893,7 +890,7 @@ export function solveGridSlotsFast(
             for (const s of slots) {
                 if (s.cells.every(c => matrix[c.r][c.c] !== null)) {
                     const formed = s.cells.map(c => matrix[c.r][c.c]!).join('');
-                    if (!catalogMap.has(formed) || filledWords.has(formed)) {
+                    if (!catalogMap.has(formed) || filledWords.has(formed) || usedWords.has(formed)) {
                         validPartial = false;
                         break;
                     }
@@ -962,7 +959,11 @@ export function generateDynamicCrosswordFromCorpus(
     if (gridSize > 10) return null;
 
     const globalStartTime = Date.now();
-    const catalog = buildWordCatalog(customWords, themeId);
+    const rawCatalog = buildWordCatalog(customWords, themeId);
+    // Strict 100-attempt rule: strictly eliminate any word used in the last 100 downloaded attempts
+    const catalog = (usedWords && usedWords.size > 0)
+        ? rawCatalog.filter(item => !usedWords.has(item.word))
+        : rawCatalog;
     if (catalog.length < 20) return null;
 
     const masks = getMasksForSize(gridSize);
