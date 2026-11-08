@@ -298,10 +298,10 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                     <div className="grid grid-cols-5 gap-1.5">
                         {[
                             { value: 20, label: '२०%', desc: 'अत्यंत दाट' },
-                            { value: 25, label: '२५%', desc: 'संतुलित' },
-                            { value: 30, label: '३०%', desc: 'मानक वृत्तपत्र' },
-                            { value: 33, label: '३३%', desc: 'शब्दवेध आदर्श' },
-                            { value: 36, label: '३६%', desc: 'विस्तृत' }
+                            { value: 25, label: '२५%', desc: 'दाट रचना' },
+                            { value: 28, label: '२८%', desc: 'मानक (आदर्श)' },
+                            { value: 30, label: '३०%', desc: 'वृत्तपत्र' },
+                            { value: 33, label: '३३%', desc: 'विस्तृत' }
                         ].map((option) => (
                             <button
                                 key={option.value}

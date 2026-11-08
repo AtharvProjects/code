@@ -46,7 +46,7 @@ const App: React.FC = () => {
     const page2Ref = useRef<HTMLDivElement>(null);
     const [pdfSuccessMessage, setPdfSuccessMessage] = useState<string | null>(null);
     const [gridSize, setGridSize] = useState(10);
-    const [blackSquarePercentage, setBlackSquarePercentage] = useState(33);
+    const [blackSquarePercentage, setBlackSquarePercentage] = useState(28);
     const [puzzleVersion, setPuzzleVersion] = useState(0);
     const [isEditMode, setIsEditMode] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);

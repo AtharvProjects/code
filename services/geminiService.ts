@@ -1,6 +1,6 @@
 import { WordClue, GridCell, PuzzleData, ClueStyle, Clues } from '../types';
 import { getVerifiedPuzzle, getFreshVerifiedPuzzle, getThemedFreshPuzzle } from './puzzleBank';
-import { getMarathiWordClue, isAuthenticMarathiWord, getCorrectedOrthographyWord, FORBIDDEN_AWKWARD_WORDS, sanitizeClue, generateSmartMarathiClue, MARATHI_DICTIONARY, SMART_WORD_CLUES, isGenericClue } from './marathiDictionary';
+import { getMarathiWordClue, isAuthenticMarathiWord, getCorrectedOrthographyWord, FORBIDDEN_AWKWARD_WORDS, FORBIDDEN_JUNK_WORDS, isSyntheticSuffixWord, sanitizeClue, generateSmartMarathiClue, MARATHI_DICTIONARY, SMART_WORD_CLUES, isGenericClue } from './marathiDictionary';
 import { getSavedCustomWordBank, isStrictCustomWordsMode } from './customLexiconService';
 import { batchSaveWordsToInfiniteLexicon, saveWordToInfiniteLexicon } from './infiniteLexiconService';
 import { validateConsecutiveBlackBlocks, getGraphemes } from './crosswordService';
@@ -67,7 +67,7 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
         if (cur.length >= 2) {
           const w = cur.join('');
           acrossWords.push(w);
-          if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w)) {
+          if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w) || FORBIDDEN_JUNK_WORDS.has(w) || isSyntheticSuffixWord(w)) {
             invalidWords.push(w);
           }
         }
@@ -77,7 +77,7 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
     if (cur.length >= 2) {
       const w = cur.join('');
       acrossWords.push(w);
-      if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w)) {
+      if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w) || FORBIDDEN_JUNK_WORDS.has(w) || isSyntheticSuffixWord(w)) {
         invalidWords.push(w);
       }
     }
@@ -94,7 +94,7 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
         if (cur.length >= 2) {
           const w = cur.join('');
           downWords.push(w);
-          if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w)) {
+          if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w) || FORBIDDEN_JUNK_WORDS.has(w) || isSyntheticSuffixWord(w)) {
             invalidWords.push(w);
           }
         }
@@ -104,7 +104,7 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
     if (cur.length >= 2) {
       const w = cur.join('');
       downWords.push(w);
-      if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w)) {
+      if (!isAuthenticMarathiWord(w) || FORBIDDEN_AWKWARD_WORDS.has(w) || FORBIDDEN_JUNK_WORDS.has(w) || isSyntheticSuffixWord(w)) {
         invalidWords.push(w);
       }
     }

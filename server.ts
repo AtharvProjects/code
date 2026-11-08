@@ -335,6 +335,9 @@ app.post('/api/gemini/generate-word-clues', async (req, res) => {
           *   Every single word chosen for the puzzle MUST be an authentic, full, and meaningful Marathi word (पूर्ण व अर्थपूर्ण मराठी शब्द).
           *   NEVER use truncated or clipped word forms (उदा. 'नकट' असा अपूर्ण शब्द अजिबात वापरू नका, त्याऐवजी 'नकटा' किंवा पूर्ण शब्दच वापरा).
           *   Do not distort or truncate words to fit cells. The clues must flow naturally without being forced or awkwardly contrived.
+          *   STRICT PROHIBITION OF FAKE SYNTHETIC SUFFIX WORDS: Never invent or use artificial compound words created with mechanical suffixes like '...युक्त', '...मय', '...हीन', '...कारक', '...प्रधान' (उदा. 'आळशीयुक्त', 'कधिमय', 'अंगठीमय', 'अंबामय', 'वाळवंटमय' हे बनावट शब्द सक्त निषिद्ध आहेत).
+          *   STRICT PROHIBITION OF NON-WORDS & CORRUPTED TOKENS: Tokens like 'बप', 'लपक', 'लपी', 'उख', 'उग', 'उच', 'उण', 'उत', 'उन', 'उल', 'अनम', 'असद' are NON-WORDS and STRICTLY FORBIDDEN.
+          *   AUTHENTIC MARATHI VOCABULARY WELCOMED: You are encouraged to use genuine Marathi nouns, verbs, adjectives, famous personalities (उदा. शिवाजी, संभाजी, जिजाऊ, तुकाराम, ज्ञानेश्वर, फुले, आंबेडकर, टिळक, सावरकर, लता, सचिन), places/forts/rivers (उदा. पुणे, मुंबई, नाशिक, रायगड, सिंहगड, पंढरपूर, गोदावरी, भीमा), countries (उदा. भारत, नेपाळ, जपान, चीन, अमेरिका, फ्रान्स), authentic Marathi food items (उदा. पोहे, उपमा, शिरा, लाडू, पेढा, पुरणपोळी, मोदक, करंजी, भाकरी, पिठले, वडापाव, मिसळ, उसळ, वरण).
 
       7.  **First-Letter & Clue Integrity (MANDATORY & PERMANENT RULE):**
           *   NEVER truncate or chop the initial letter of any clue word (उदा. 'वरण किंवा उसळीत वापरले जाणारे एक कडधान्य' - यात 'व' किंवा 'क' अजिबात तुटू नये). Start every clue with a complete, grammatically sound Marathi word.

@@ -13,7 +13,7 @@
 
 import { PuzzleData, GridCell, Clues, Clue } from '../types';
 import { ALL_USER_1000_WORDS } from './userLexicon1000';
-import { MARATHI_DICTIONARY, getMarathiWordClue, sanitizeClue, isAuthenticMarathiWord, FORBIDDEN_AWKWARD_WORDS, generateSmartMarathiClue } from './marathiDictionary';
+import { MARATHI_DICTIONARY, getMarathiWordClue, sanitizeClue, isAuthenticMarathiWord, FORBIDDEN_AWKWARD_WORDS, FORBIDDEN_JUNK_WORDS, isSyntheticSuffixWord, generateSmartMarathiClue } from './marathiDictionary';
 import { getGraphemes } from './crosswordService';
 import { CustomWordItem } from './customLexiconService';
 
@@ -214,6 +214,31 @@ export const INTERLOCKING_MASKS_9X9: string[][] = [
 
 
 export const INTERLOCKING_MASKS_10X10: string[][] = [
+    // Standard 28% black square standard masks (२८% मानक वृत्तपत्र रचना)
+    [
+        "0000#00000",
+        "00#000#00#",
+        "0#000#0000",
+        "#00#000##0",
+        "00000#000#",
+        "0##0##0000",
+        "0#0000#0#0",
+        "#00#00###0",
+        "0000#00#00",
+        "0000#00#00"
+    ],
+    [
+        "0000#00000",
+        "00#000#00#",
+        "0#000#0000",
+        "#00#000##0",
+        "00000#0000",
+        "0##0##000#",
+        "0#0000#0#0",
+        "#00#00###0",
+        "0000#00#00",
+        "0#00#00#00"
+    ],
     [
         "0000#00#00",
         "00#0#0#00#",
@@ -680,7 +705,7 @@ export function buildWordCatalog(customWords?: CustomWordItem[], themeId?: strin
     const uniqueMap = new Map<string, WordEntry>();
     for (const item of combined) {
         const clean = item.word.trim();
-        if (!clean || FORBIDDEN_AWKWARD_WORDS.has(clean) || !isAuthenticMarathiWord(clean)) continue;
+        if (!clean || FORBIDDEN_JUNK_WORDS.has(clean) || FORBIDDEN_AWKWARD_WORDS.has(clean) || isSyntheticSuffixWord(clean) || !isAuthenticMarathiWord(clean)) continue;
         const graphemes = getGraphemes(clean);
         if (graphemes.length >= 2 && graphemes.length <= 6) {
             if (!uniqueMap.has(clean)) {
