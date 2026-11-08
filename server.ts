@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { getMarathiWordClue, generateSmartMarathiClue, sanitizeClue, isGenericClue } from './services/marathiDictionary';
+import { getMarathiWordClue, generateSmartMarathiClue, sanitizeClue, isGenericClue, isAuthenticMarathiWord, FORBIDDEN_JUNK_WORDS, isSyntheticSuffixWord } from './services/marathiDictionary';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -336,7 +336,7 @@ app.post('/api/gemini/generate-word-clues', async (req, res) => {
           *   NEVER use truncated or clipped word forms (उदा. 'नकट' असा अपूर्ण शब्द अजिबात वापरू नका, त्याऐवजी 'नकटा' किंवा पूर्ण शब्दच वापरा).
           *   Do not distort or truncate words to fit cells. The clues must flow naturally without being forced or awkwardly contrived.
           *   STRICT PROHIBITION OF FAKE SYNTHETIC SUFFIX WORDS: Never invent or use artificial compound words created with mechanical suffixes like '...युक्त', '...मय', '...हीन', '...कारक', '...प्रधान' (उदा. 'आळशीयुक्त', 'कधिमय', 'अंगठीमय', 'अंबामय', 'वाळवंटमय' हे बनावट शब्द सक्त निषिद्ध आहेत).
-          *   STRICT PROHIBITION OF NON-WORDS & CORRUPTED TOKENS: Tokens like 'बप', 'लपक', 'लपी', 'उख', 'उग', 'उच', 'उण', 'उत', 'उन', 'उल', 'अनम', 'असद' are NON-WORDS and STRICTLY FORBIDDEN.
+          *   STRICT PROHIBITION OF NON-WORDS, CORRUPTED TOKENS & REVERSED LETTERS: Words/tokens like 'जीलद', 'ळन्नास', 'घबाक', 'पचक', 'सुयाती', 'थपडा', 'बप', 'लपक', 'लपी', 'उख', 'उग', 'उच', 'उण', 'उत', 'उन', 'उल', 'अनम', 'असद' are NON-WORDS and STRICTLY FORBIDDEN. Never reverse words or start words with 'ळ'.
           *   AUTHENTIC MARATHI VOCABULARY WELCOMED: You are encouraged to use genuine Marathi nouns, verbs, adjectives, famous personalities (उदा. शिवाजी, संभाजी, जिजाऊ, तुकाराम, ज्ञानेश्वर, फुले, आंबेडकर, टिळक, सावरकर, लता, सचिन), places/forts/rivers (उदा. पुणे, मुंबई, नाशिक, रायगड, सिंहगड, पंढरपूर, गोदावरी, भीमा), countries (उदा. भारत, नेपाळ, जपान, चीन, अमेरिका, फ्रान्स), authentic Marathi food items (उदा. पोहे, उपमा, शिरा, लाडू, पेढा, पुरणपोळी, मोदक, करंजी, भाकरी, पिठले, वडापाव, मिसळ, उसळ, वरण).
 
       7.  **First-Letter & Clue Integrity (MANDATORY & PERMANENT RULE):**
@@ -391,7 +391,7 @@ app.post('/api/gemini/generate-word-clues', async (req, res) => {
           word: w,
           clue: sanitizeClue(w, raw)
         };
-      }).filter((c: any) => c.word && c.clue);
+      }).filter((c: any) => c.word && c.clue && isAuthenticMarathiWord(c.word) && !FORBIDDEN_JUNK_WORDS.has(c.word) && !isSyntheticSuffixWord(c.word));
       return res.json({ wordClues: sanitized });
     }
     res.json(parsed);

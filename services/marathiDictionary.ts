@@ -995,7 +995,6 @@ export const MARATHI_DICTIONARY: Record<string, string> = {
     "थट": "टा, मस्करी वा समूह",
     "थडगे": "समाधी वा स्मारक",
     "थप": "थप्पड वा थांबणे",
-    "थपडा": "गालावर मारलेली चपराक, थप्पड",
     "थबक": "चालता चालता अचानक पाय थांबणे",
     "थम": "थांबणे, गती मंदावणे",
     "थर": "मातीचा वा रंगाचा थर",
@@ -1277,7 +1276,6 @@ export const MARATHI_DICTIONARY: Record<string, string> = {
     "पक्षनिष्ठा": "आपल्या राजकीय पक्षाशी प्रामाणिक राहण्याची वृत्ती",
     "पक्षपाती": "एकाच बाजूची तळी उचलणारा, अन्यायी",
     "पक्षी": "आकाशात पंखांनी स्वच्छंद उडणारे पाखरू, विहंग",
-    "पचक": "पाण्यात पाय पडल्यावर होणारा छपाक आवाज",
     "पछाड": "भूत किंवा विचारांनी झपाटून जाणे",
     "पडताळा": "सत्यता तपासण्यासाठी घेतलेली खात्री",
     "पण": "अट, प्रतिज्ञा वा परंतु",
@@ -2424,7 +2422,8 @@ export const MARATHI_DICTIONARY: Record<string, string> = {
 };
 
 export const FORBIDDEN_JUNK_WORDS = new Set<string>([
-    // Fake tokens reported by user
+    // Fake tokens, reversed matrix words, and non-words reported by user
+    "जीलद", "ळन्नास", "घबाक", "पचक", "सुयाती", "थपडा", "पच क",
     "आळशीयुक्त", "कधिमय", "बप", "लपक", "लपी", "लहता", "कूम", "दय", "हामर्दोनयम", "अंगठीमय", "अंबामय", "अंकयुक्त", "अंकमय", "वाळवंटमय",
     // Combinatorial/corrupted 2-letter tokens
     "पक", "पग", "पट", "पप", "पव", 
@@ -2940,6 +2939,10 @@ export function cleanClue(word: string, clue: string): string {
 export function isAuthenticMarathiWord(word: string): boolean {
     if (!word) return false;
     const clean = word.trim();
+    // Words in Marathi never start with 'ळ' or 'ण', cannot contain spaces or non-Devanagari characters
+    if (clean.startsWith('ळ') || clean.startsWith('ण') || clean.includes(' ') || clean.length < 2) {
+        return false;
+    }
     if (FORBIDDEN_JUNK_WORDS.has(clean) || FORBIDDEN_AWKWARD_WORDS.has(clean) || isSyntheticSuffixWord(clean)) {
         return false;
     }

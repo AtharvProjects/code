@@ -40,7 +40,7 @@ import {
     generateWordCluesFromAI,
     getCluesForWords
 } from './services/geminiService';
-import { transformGridMatrix, buildPuzzleDataFromMatrix } from './services/denseCrosswordEngine';
+// denseCrosswordEngine character matrix transforms removed to prevent word reversals
 
 const App: React.FC = () => {
     const [wordClues, setWordClues] = useState<WordClue[]>([]);
@@ -237,15 +237,14 @@ const App: React.FC = () => {
             newPuzzle = buildPuzzleFromMaster(master);
         }
 
-        // Guarantee that the mask signature ALWAYS changes on shuffle
+        // Guarantee that the mask signature changes on shuffle by picking a distinct verified candidate
         let newSig = getGridMaskSignature(newPuzzle.grid);
         if (currentSignature && newSig === currentSignature) {
-            for (let v = 1; v < 8; v++) {
-                const charMatrix = newPuzzle.grid.map(row => row.map(cell => cell.isBlack || !cell.letter ? '#' : cell.letter));
-                const transformed = transformGridMatrix(charMatrix, (nextNonce * 3 + v) % 8);
-                const testSig = transformed.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
-                if (testSig !== currentSignature) {
-                    newPuzzle = buildPuzzleDataFromMatrix(transformed, selectedTheme);
+            for (let offset = 1; offset <= 8; offset++) {
+                const altMaster = getThemedFreshPuzzle(selectedTheme, currentWords, currentAttempt * 17 + nextNonce + offset, gridSize, currentSignature, blackSquarePercentage);
+                const altSig = getGridMaskSignature(altMaster.grid);
+                if (altSig !== currentSignature) {
+                    newPuzzle = buildPuzzleFromMaster(altMaster);
                     break;
                 }
             }

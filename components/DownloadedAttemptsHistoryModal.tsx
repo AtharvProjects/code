@@ -332,3 +332,4 @@ export const DownloadedAttemptsHistoryModal: React.FC<DownloadedAttemptsHistoryM
         </div>
     );
 };
+
