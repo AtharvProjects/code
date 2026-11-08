@@ -26,7 +26,7 @@ import {
     extractPlacedWordsFromGrid
 } from './services/crosswordService';
 import { getMarathiWordClue, sanitizeClue, isGenericClue, generateSmartMarathiClue } from './services/marathiDictionary';
-import { getGridMaskSignature } from './services/dynamicCrosswordSolver';
+import { getGridMaskSignature, buildWordCatalog } from './services/dynamicCrosswordSolver';
 import {
     generateDenseCrosswordAI,
     generateWordCluesFromAI,
@@ -138,6 +138,15 @@ const App: React.FC = () => {
             const defaultPuzzle = getDefaultShabdavedhPuzzle();
             setPuzzleData(defaultPuzzle);
         }
+
+        // Pre-warm the authentic word catalog in idle time so puzzle generation is instant (< 85ms)
+        const warmupTimer = setTimeout(() => {
+            try {
+                buildWordCatalog();
+            } catch {}
+        }, 120);
+
+        return () => clearTimeout(warmupTimer);
     }, []);
 
     // Save puzzle to local storage whenever it changes

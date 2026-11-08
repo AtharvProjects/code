@@ -691,10 +691,52 @@ export const THEME_SEEDS_DICT: Record<string, string[]> = {
     auto: ["आशीर्वाद", "लेख", "किल्ला", "संगणक", "आराम", "वजन", "कलम", "बालकवी", "राजधानी", "पूजा", "आरती", "गोडबोले", "रसरशीत", "पोलखोल"]
 };
 
+let cachedDefaultCatalog: WordEntry[] | null = null;
+let cachedDefaultByLen: Map<number, WordEntry[]> | null = null;
+let cachedDefaultIndex: Map<string, WordEntry[]> | null = null;
+let cachedDefaultMap: Map<string, WordEntry> | null = null;
+
+function getCatalogIndices(catalog: WordEntry[]) {
+    if (catalog === cachedDefaultCatalog && cachedDefaultIndex && cachedDefaultByLen && cachedDefaultMap) {
+        return {
+            byLen: cachedDefaultByLen,
+            index: cachedDefaultIndex,
+            catalogMap: cachedDefaultMap
+        };
+    }
+    const byLen = new Map<number, WordEntry[]>();
+    const index = new Map<string, WordEntry[]>();
+    const catalogMap = new Map<string, WordEntry>();
+
+    for (const item of catalog) {
+        catalogMap.set(item.word, item);
+        if (!byLen.has(item.length)) byLen.set(item.length, []);
+        byLen.get(item.length)!.push(item);
+
+        for (let i = 0; i < item.length; i++) {
+            const key = `${item.length}:${i}:${item.graphemes[i]}`;
+            if (!index.has(key)) index.set(key, []);
+            index.get(key)!.push(item);
+        }
+    }
+
+    if (catalog === cachedDefaultCatalog) {
+        cachedDefaultByLen = byLen;
+        cachedDefaultIndex = index;
+        cachedDefaultMap = catalogMap;
+    }
+    return { byLen, index, catalogMap };
+}
+
 /**
  * Prepares the active word bank with grapheme tokens and authentic clues.
  */
 export function buildWordCatalog(customWords?: CustomWordItem[], themeId?: string): WordEntry[] {
+    const isDefault = (!customWords || customWords.length === 0) && (!themeId || themeId === 'auto');
+    if (isDefault && cachedDefaultCatalog && cachedDefaultCatalog.length > 0) {
+        return cachedDefaultCatalog;
+    }
+
     const wordList = (customWords && customWords.length > 0)
         ? customWords.map(c => ({ word: c.word, clue: c.clue }))
         : ALL_USER_1000_WORDS.map(w => ({ word: w, clue: MARATHI_DICTIONARY[w] || getMarathiWordClue(w) || generateSmartMarathiClue(w) }));
@@ -719,7 +761,11 @@ export function buildWordCatalog(customWords?: CustomWordItem[], themeId?: strin
         }
     }
 
-    return Array.from(uniqueMap.values());
+    const catalog = Array.from(uniqueMap.values());
+    if (isDefault) {
+        cachedDefaultCatalog = catalog;
+    }
+    return catalog;
 }
 
 /**
@@ -741,22 +787,8 @@ export function solveGridSlotsFast(
         ? new Set(THEME_SEEDS_DICT[themeId])
         : new Set<string>();
 
-    // Build inverted index: [len:pos:char] -> WordEntry[]
-    const byLen = new Map<number, WordEntry[]>();
-    const index = new Map<string, WordEntry[]>();
-    const catalogMap = new Map<string, WordEntry>();
-
-    for (const item of catalog) {
-        catalogMap.set(item.word, item);
-        if (!byLen.has(item.length)) byLen.set(item.length, []);
-        byLen.get(item.length)!.push(item);
-
-        for (let i = 0; i < item.length; i++) {
-            const key = `${item.length}:${i}:${item.graphemes[i]}`;
-            if (!index.has(key)) index.set(key, []);
-            index.get(key)!.push(item);
-        }
-    }
+    // Fast inverted index: [len:pos:char] -> WordEntry[]
+    const { byLen, index, catalogMap } = getCatalogIndices(catalog);
 
     // Seeded shuffle helper
     let s = Math.abs(seed) + 7;
@@ -795,11 +827,13 @@ export function solveGridSlotsFast(
     const assignedWords = new Set<string>();
     const placements: { slot: GridSlot; entry: WordEntry }[] = [];
     let steps = 0;
-    const MAX_STEPS = 50000;
+    const MAX_STEPS = 600;
+    const startTime = Date.now();
 
     function backtrack(): boolean {
         steps++;
         if (steps > MAX_STEPS) return false;
+        if (Date.now() - startTime > 20) return false;
 
         let bestSlot: GridSlot | null = null;
         let bestCandidates: WordEntry[] | null = null;
@@ -923,9 +957,13 @@ export function generateDynamicCrosswordFromCorpus(
     excludeMaskSignature?: string,
     targetBlackPct?: number
 ): PuzzleData | null {
+    // Dynamic on-the-fly backtracking solver is designed for grid sizes <= 10.
+    // Larger grids (12, 15, 20, 25) instantly load guaranteed 100% authentic master puzzles to prevent UI hangs.
+    if (gridSize > 10) return null;
+
+    const globalStartTime = Date.now();
     const catalog = buildWordCatalog(customWords, themeId);
     if (catalog.length < 20) return null;
-    if (gridSize >= 18) return null;
 
     const masks = getMasksForSize(gridSize);
     if (!masks || masks.length === 0) return null;
@@ -951,12 +989,15 @@ export function generateDynamicCrosswordFromCorpus(
     });
 
     const maxAllowedBlackPct = targetBlackPct ? Math.max(45, targetBlackPct + 10) : 45;
+    const topIndices = sortedIndices.slice(0, 3);
 
-    for (const mIdx of sortedIndices) {
+    for (const mIdx of topIndices) {
+        if (Date.now() - globalStartTime > 80) return null;
         const baseMask = masks[mIdx];
         
-        // Try multiple spatial transformations (variants)
-        for (let v = 0; v < 8; v++) {
+        // Try top spatial transformations (variants)
+        for (let v = 0; v < 2; v++) {
+            if (Date.now() - globalStartTime > 80) return null;
             const variant = (attemptNumber * 5 + v) % 8;
             const transformedMask = transformMask(baseMask, variant);
             const signature = getGridMaskSignature(transformedMask);
