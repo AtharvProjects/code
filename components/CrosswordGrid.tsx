@@ -36,10 +36,10 @@ const EditableCell: React.FC<{
     onGridChange: (newGrid: GridCell[][]) => void;
 }> = ({ cell, r, c, grid, onGridChange }) => {
     
-    const [inputValue, setInputValue] = useState<string>(() => (cell.isBlack || !cell.letter ? '' : cell.letter));
+    const [inputValue, setInputValue] = useState<string>(() => (cell.isBlack || !cell.letter ? '' : (getGraphemes(cell.letter)[0] || cell.letter)));
 
     useEffect(() => {
-        setInputValue(cell.isBlack || !cell.letter ? '' : cell.letter);
+        setInputValue(cell.isBlack || !cell.letter ? '' : (getGraphemes(cell.letter)[0] || cell.letter));
     }, [cell.letter, cell.isBlack]);
 
     const commitChange = (value: string) => {
@@ -174,7 +174,7 @@ export const CrosswordGrid: React.FC<CrosswordGridProps> = ({ grid, showSolution
                                         {toDevanagari(cell.number)}
                                     </span>
                                 )}
-                                {showSolution && !cell.isBlack && cell.letter}
+                                {showSolution && !cell.isBlack && cell.letter && (getGraphemes(cell.letter)[0] || cell.letter)}
                             </div>
                         );
                     })

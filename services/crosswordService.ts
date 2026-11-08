@@ -17,6 +17,20 @@ export function getGraphemes(word: string): string[] {
     }
 }
 
+/**
+ * Ensures that a cell strictly contains at most ONE Marathi akshara (grapheme cluster).
+ * If multiple characters/graphemes are passed (e.g. 'तूप' or 'गूळ'), strictly keeps only the first akshara.
+ * Returns null for black squares, empty strings or whitespace.
+ */
+export function sanitizeSingleAkshara(cellValue: string | null | undefined): string | null {
+    if (!cellValue || cellValue === '#' || cellValue.trim() === '' || cellValue.toLowerCase() === 'black') {
+        return null;
+    }
+    const clean = cellValue.trim();
+    const graphemes = getGraphemes(clean);
+    return graphemes.length > 0 ? graphemes[0] : null;
+}
+
 function createEmptyGrid(size: number): GridCell[][] {
     return Array(size).fill(null).map(() =>
         Array(size).fill(null).map(() => ({
@@ -289,11 +303,15 @@ function canPlaceWordInEmptySpace(grid: GridCell[][], wordGraphemes: string[], r
 
 
 export function finalizeGrid(grid: GridCell[][], placedWords: PlacedWord[], gridSize: number): GridCell[][] {
-    const finalGrid = grid.map(row => row.map(cell => ({
-        ...cell,
-        isBlack: !cell.letter,
-        number: null
-    })));
+    const finalGrid = grid.map(row => row.map(cell => {
+        const cleanLetter = sanitizeSingleAkshara(cell.letter);
+        return {
+            ...cell,
+            letter: cleanLetter,
+            isBlack: !cleanLetter,
+            number: null
+        };
+    }));
 
     if (placedWords.length === 0 && grid.every(r => r.every(c => c.isBlack || !c.letter))) {
         // If grid is effectively empty, don't number it.
@@ -419,8 +437,8 @@ export async function buildPuzzleFromAIGrid(
             if (!rawCell || rawCell === '#' || rawCell.toLowerCase() === 'black' || rawCell.trim() === '') {
                 row.push({ letter: null, isBlack: true, number: null });
             } else {
-                const graphemes = getGraphemes(rawCell.trim());
-                row.push({ letter: graphemes[0] || rawCell.trim(), isBlack: false, number: null });
+                const akshara = sanitizeSingleAkshara(rawCell);
+                row.push({ letter: akshara, isBlack: !akshara, number: null });
             }
         }
         initialGrid.push(row);
@@ -501,7 +519,8 @@ export function buildPuzzleFromMaster(master: MasterGridPuzzle): PuzzleData {
             if (!raw || raw === '#' || raw.trim() === '') {
                 row.push({ letter: null, isBlack: true, number: null });
             } else {
-                row.push({ letter: raw.trim(), isBlack: false, number: null });
+                const akshara = sanitizeSingleAkshara(raw);
+                row.push({ letter: akshara, isBlack: !akshara, number: null });
             }
         }
         initialGrid.push(row);

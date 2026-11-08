@@ -120,14 +120,14 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                             दाट रचना (Dense Layout)
                         </span>
                         <span className="text-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded-full">
-                            काळे चौकोन प्रमाण: १५% ते २८% कमाल
+                            १००% अर्थपूर्ण शब्द • वृत्तपत्र मानक रचना (२५% ते ३५%)
                         </span>
                         <span className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 font-semibold px-2 py-0.5 rounded-full">
-                            अस्सल मराठी व्याकरण (वेलांटी/उकार अचूकता)
+                            एका चौकटीत एकच अक्षर • अस्सल मराठी व्याकरण
                         </span>
                     </h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        कमीत-कमी काळे चौकोन (२८% कमाल मर्यादा), एका सलग कमाल ३ काळे ब्लॉक, आणि १००% शुद्ध मराठी व्याकरणाने (ऱ्हस्व/दीर्घ अचूकतेने) बनवलेले शब्द.
+                        प्रत्येक शब्द १००% अर्थपूर्ण असण्याला सर्वोच्च प्राधान्य (अर्थ नसलेले शब्द पूर्णतः वर्ज्य), एका चौकटीत एकच अक्षर, आणि अस्सल वृत्तपत्रीय शब्दवेध रचना.
                     </p>
                 </div>
             </div>
@@ -297,11 +297,11 @@ export const WordInputForm: React.FC<PuzzleSettingsFormProps> = ({
                     {/* Quick Preset Density Buttons */}
                     <div className="grid grid-cols-5 gap-1.5">
                         {[
-                            { value: 15, label: '१५%', desc: 'अत्यंत दाट' },
-                            { value: 20, label: '२०%', desc: 'आदर्श' },
+                            { value: 20, label: '२०%', desc: 'अत्यंत दाट' },
                             { value: 25, label: '२५%', desc: 'संतुलित' },
-                            { value: 28, label: '२८%', desc: 'मानक' },
-                            { value: 33, label: '३३%', desc: 'विस्तृत' }
+                            { value: 30, label: '३०%', desc: 'मानक वृत्तपत्र' },
+                            { value: 33, label: '३३%', desc: 'शब्दवेध आदर्श' },
+                            { value: 36, label: '३६%', desc: 'विस्तृत' }
                         ].map((option) => (
                             <button
                                 key={option.value}

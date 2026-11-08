@@ -11,7 +11,8 @@
 import { MARATHI_DICTIONARY, getMarathiWordClue, sanitizeClue } from './marathiDictionary';
 import { transformGridMatrix, extractWordsFromMatrix } from './denseCrosswordEngine';
 import { generateDynamicCrosswordFromCorpus } from './dynamicCrosswordSolver';
-import { findThematicMasterPuzzle, THEMATIC_MASTER_PUZZLES } from './themedMasterPuzzles';
+import { findThematicMasterPuzzle } from './themedMasterPuzzles';
+import { getGraphemes } from './crosswordService';
 
 export interface MasterGridPuzzle {
     id: string;
@@ -8244,7 +8245,7 @@ export const VERIFIED_PUZZLES_15X15: MasterGridPuzzle[] = [
                 "#",
                 "न",
                 "#",
-                "ज",
+                "च",
                 "क"
             ],
             [
@@ -8431,8 +8432,12 @@ export const VERIFIED_PUZZLES_15X15: MasterGridPuzzle[] = [
                 "clue": "सैनिकाचे वा शरीराचे रक्षण करणारे चिलखत"
             },
             {
-                "word": "वजन",
-                "clue": "वस्तूचे मोजलेले वस्तुमान वा भार"
+                "word": "वचन",
+                "clue": "दिलेला शब्द, प्रतिज्ञा किंवा आश्वासन"
+            },
+            {
+                "word": "चक",
+                "clue": "चमक किंवा नजरबंदी, दिशाभूल"
             },
             {
                 "word": "वाचन",
@@ -8691,7 +8696,7 @@ export const VERIFIED_PUZZLES_15X15: MasterGridPuzzle[] = [
                 "#",
                 "पो",
                 "#",
-                "ते",
+                "#",
                 "रा"
             ],
             [
@@ -8759,7 +8764,7 @@ export const VERIFIED_PUZZLES_15X15: MasterGridPuzzle[] = [
                 "#",
                 "चौ",
                 "#",
-                "न",
+                "र",
                 "ण"
             ],
             [
@@ -8906,12 +8911,16 @@ export const VERIFIED_PUZZLES_15X15: MasterGridPuzzle[] = [
                 "clue": "राजाशी, शासनाशी वा दरबाराशी संबंधित"
             },
             {
-                "word": "तेरा",
-                "clue": "बारा अधिक एक वा १३ ही संख्या"
+                "word": "रण",
+                "clue": "युद्ध, संग्राम वा लढाईचे मैदान"
             },
             {
-                "word": "जनक",
-                "clue": "पिता, जन्मदाता किंवा सीतेचे वडील असलेले मिथिलापती"
+                "word": "जरक",
+                "clue": "सोनेरी वा रुपेरी जरीची चमक, चकाकी"
+            },
+            {
+                "word": "होट",
+                "clue": "ओठ किंवा तोंडाची कडा (पारंपरिक मराठी शब्द)"
             },
             {
                 "word": "कसरत",
@@ -9111,15 +9120,15 @@ export function getPuzzleListForSize(gridSize: number): MasterGridPuzzle[] {
         case 9:
             return VERIFIED_PUZZLES_9X9;
         case 12:
-            return [...VERIFIED_PUZZLES_12X12, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 12)];
+            return VERIFIED_PUZZLES_12X12;
         case 15:
-            return [...VERIFIED_PUZZLES_15X15, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 15)];
+            return VERIFIED_PUZZLES_15X15;
         case 20:
             return VERIFIED_PUZZLES_20X20;
         case 25:
             return VERIFIED_PUZZLES_25X25;
         case 10:
-            return [...VERIFIED_PUZZLES, ...THEMATIC_MASTER_PUZZLES.filter(p => p.gridSize === 10)];
+            return VERIFIED_PUZZLES;
         default: {
             try {
                 const dyn = generateDynamicCrosswordFromCorpus(gridSize, 1);
@@ -9148,8 +9157,20 @@ export function getPuzzleListForSize(gridSize: number): MasterGridPuzzle[] {
     }
 }
 
-function sanitizeMasterPuzzleGrid(puzzle: MasterGridPuzzle): MasterGridPuzzle {
-    return puzzle;
+export function sanitizeMasterPuzzleGrid(puzzle: MasterGridPuzzle): MasterGridPuzzle {
+    if (!puzzle || !puzzle.grid) return puzzle;
+    const sanitizedGrid = puzzle.grid.map(row => 
+        row.map(cell => {
+            if (!cell || cell === '#' || cell.trim() === '' || cell.toLowerCase() === 'black') return '#';
+            const segs = getGraphemes(cell.trim());
+            // Strictly at most one grapheme (single akshara) per cell
+            return segs[0] || '#';
+        })
+    );
+    return {
+        ...puzzle,
+        grid: sanitizedGrid
+    };
 }
 
 export function getVerifiedPuzzle(gridSize: number, themeIdx: number = 0): MasterGridPuzzle {
@@ -9243,31 +9264,7 @@ export function getFreshVerifiedPuzzle(
     // Choose candidate by rotating through top candidates
     const topCount = Math.min(candidates.length, Math.max(1, Math.min(5, candidates.length)));
     const chosenIndex = (Math.max(1, attemptNumber) - 1) % topCount;
-    let chosen = candidates[chosenIndex] || candidates[0];
-
-    // If excludeMaskSignature is set and chosen has the exact same mask signature (e.g. only 1 distinct mask in list)
-    if (excludeMaskSignature && getSig(chosen) === excludeMaskSignature) {
-        // Apply spatial transformation so that black blocks guaranteed move
-        for (let v = 1; v < 8; v++) {
-            const variantGrid = transformGridMatrix(chosen.grid, (attemptNumber * 3 + v) % 8);
-            const varSig = variantGrid.map(r => r.map(c => c === '#' ? '#' : '0').join('')).join('|');
-            if (varSig !== excludeMaskSignature) {
-                const words = extractWordsFromMatrix(variantGrid);
-                const allWords = [...words.acrossWords, ...words.downWords];
-                const clues = allWords.map(w => ({
-                    word: w,
-                    clue: getMarathiWordClue(w) || MARATHI_DICTIONARY[w] || 'संकेतावरून ओळखा'
-                }));
-                return {
-                    ...chosen,
-                    id: `${chosen.id}_variant_${v}`,
-                    grid: variantGrid,
-                    clues,
-                    totalWordCount: clues.length
-                };
-            }
-        }
-    }
+    const chosen = candidates[chosenIndex] || candidates[0];
 
     return sanitizeMasterPuzzleGrid(chosen);
 }
@@ -9365,7 +9362,7 @@ export function getThemedFreshPuzzle(
             }
 
             const startIndex = (Math.max(1, attemptNumber) - 1) % matchingList.length;
-            return matchingList[startIndex] || matchingList[0];
+            return sanitizeMasterPuzzleGrid(matchingList[startIndex] || matchingList[0]);
         }
 
         // 3. If no pre-built puzzle for this size/theme, pick fresh verified puzzle of the EXACT size and set theme meta

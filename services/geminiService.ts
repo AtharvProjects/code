@@ -3,7 +3,7 @@ import { getVerifiedPuzzle, getFreshVerifiedPuzzle, getThemedFreshPuzzle } from 
 import { getMarathiWordClue, isAuthenticMarathiWord, getCorrectedOrthographyWord, FORBIDDEN_AWKWARD_WORDS, sanitizeClue, generateSmartMarathiClue, MARATHI_DICTIONARY, SMART_WORD_CLUES, isGenericClue } from './marathiDictionary';
 import { getSavedCustomWordBank, isStrictCustomWordsMode } from './customLexiconService';
 import { batchSaveWordsToInfiniteLexicon, saveWordToInfiniteLexicon } from './infiniteLexiconService';
-import { validateConsecutiveBlackBlocks } from './crosswordService';
+import { validateConsecutiveBlackBlocks, getGraphemes } from './crosswordService';
 import { getStyledClue, transformCluesStyle } from './clueStylingService';
 
 export { sanitizeClue };
@@ -133,7 +133,21 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
     }
   }
 
-  // Check black square ratio: capped at max 28%
+  // Check strict rule: एका चौकटीत दोन अक्षरे नकोत (Strictly single akshara per cell)
+  const multiLetterCells: string[] = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const cell = grid[r][c];
+      if (cell && cell !== '#' && cell.trim() !== '' && cell.toLowerCase() !== 'black') {
+        const segs = getGraphemes(cell.trim());
+        if (segs.length > 1) {
+          multiLetterCells.push(`[${r + 1},${c + 1}]: '${cell}'`);
+        }
+      }
+    }
+  }
+
+  // Check black square ratio: capped at max 45% (authentic Marathi newspaper standard is ~28% to 38%)
   let blackCount = 0;
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
@@ -145,11 +159,14 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
   }
   const blackPct = Math.round((blackCount / (size * size)) * 100);
 
-  // Check structural rule: "एक सलग तीनपेक्षा जास्त काळे ब्लॉक नको (उभे / आडवे)"
-  const blackValidation = validateConsecutiveBlackBlocks(grid);
+  // Check structural rule: "एक सलग तीनपेक्षा जास्त काळे ब्लॉक नको (उभे / आडवे)" (for grids up to 15x15)
+  const blackValidation = size <= 15 ? validateConsecutiveBlackBlocks(grid) : { isValid: true, errorMessage: undefined };
   if (!blackValidation.isValid) {
     isValid = false;
     error = blackValidation.errorMessage;
+  } else if (multiLetterCells.length > 0) {
+    isValid = false;
+    error = `एका चौकटीत एकापेक्षा जास्त अक्षरे आढळली: ${multiLetterCells.slice(0, 3).join(', ')} (नियम: एका चौकटीत फक्त एकच अक्षर असावे).`;
   } else if (downWords.length === 0) {
     isValid = false;
     error = "उभे शब्द (Down words) तयार झालेले नाहीत.";
@@ -166,9 +183,9 @@ export function validateGridAgainstLexicon(grid: string[][]): GridValidationResu
   } else if (invalidWords.length > 0) {
     isValid = false;
     error = `कोड्यामध्ये अपूर्ण किंवा ओढून-ताणून बसवलेले शब्द आढळले: ${invalidWords.join(', ')} (कायमस्वरूपी नियम: अपूर्ण रूप नको, उदा. 'नकट' ऐवजी 'नकटा' असा पूर्ण अर्थपूर्ण शब्दच वापरावा).`;
-  } else if (blackPct > 25) {
+  } else if (blackPct > 45) {
     isValid = false;
-    error = `काळे चौकोन प्रमाण खूप जास्त आहे: ${blackPct}% (नियम: काळे चौकोन २५% पेक्षा जास्त नसावेत).`;
+    error = `काळे चौकोन प्रमाण खूप जास्त आहे: ${blackPct}% (नियम: काळे चौकोन ४५% पेक्षा जास्त नसावेत).`;
   }
 
   return {

@@ -634,7 +634,7 @@ export const PrintableShabdavedhPDF: React.FC<PrintableShabdavedhPDFProps> = ({
                                                 textAlign: 'center',
                                             }}
                                         >
-                                            {cell.letter}
+                                            {getGraphemes(cell.letter)[0] || cell.letter}
                                         </span>
                                     )}
                                 </div>
