@@ -5,6 +5,7 @@ import { getSavedCustomWordBank, isStrictCustomWordsMode } from './customLexicon
 import { batchSaveWordsToInfiniteLexicon, saveWordToInfiniteLexicon } from './infiniteLexiconService';
 import { validateConsecutiveBlackBlocks, getGraphemes } from './crosswordService';
 import { getStyledClue, transformCluesStyle } from './clueStylingService';
+import { clientGenerateDenseClues, clientRestyleClues, clientGenerateWordClues } from './clientGeminiService';
 
 export { sanitizeClue };
 
@@ -319,25 +320,46 @@ export async function generateDenseCrosswordAI(
     }
   }
 
-  // 3. Call server API endpoint to personalize clues for BOTH across and down words
+  // 3. Call server API endpoint, or gracefully fallback to client-side direct Gemini
   try {
-    const res = await fetch('/api/gemini/generate-dense-clues', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        allGridWords,
-        theme: chosenMaster.theme,
-        description: chosenMaster.description,
-        attemptNumber,
-        puzzleLevel,
-      }),
-    });
+    let parsed: any = null;
 
-    if (!res.ok) {
-      throw new Error(`Server returned ${res.status}`);
+    try {
+      const res = await fetch('/api/gemini/generate-dense-clues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          allGridWords,
+          theme: chosenMaster.theme,
+          description: chosenMaster.description,
+          attemptNumber,
+          puzzleLevel,
+        }),
+      });
+
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim().startsWith('{')) {
+          parsed = JSON.parse(text);
+        }
+      }
+    } catch (_serverErr) {
+      // Server not reachable (e.g. running as static SPA on Cloudflare Workers / Pages)
     }
 
-    const parsed = await res.json();
+    // Direct client-side Gemini fallback if backend route was not present
+    if (!parsed || !Array.isArray(parsed.clues) || parsed.clues.length === 0) {
+      const clientClues = await clientGenerateDenseClues(
+        allGridWords,
+        chosenMaster.theme,
+        chosenMaster.description,
+        attemptNumber,
+        puzzleLevel
+      );
+      if (clientClues && clientClues.length > 0) {
+        parsed = { clues: clientClues };
+      }
+    }
 
     const aiClueMap = new Map<string, string>();
     if (parsed && Array.isArray(parsed.clues)) {
@@ -409,22 +431,35 @@ export async function regenerateCluesForPuzzleWithStyle(
 
   try {
     const styleInstructions = CLUE_STYLE_PROMPT_GUIDES[newStyle] || CLUE_STYLE_PROMPT_GUIDES.cryptic;
+    let parsed: any = null;
 
-    const res = await fetch('/api/gemini/restyle-clues', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wordList,
-        styleInstructions,
-        puzzleLevel,
-      }),
-    });
+    try {
+      const res = await fetch('/api/gemini/restyle-clues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wordList,
+          styleInstructions,
+          puzzleLevel,
+        }),
+      });
 
-    if (!res.ok) {
-      throw new Error(`Server returned ${res.status}`);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim().startsWith('{')) {
+          parsed = JSON.parse(text);
+        }
+      }
+    } catch (_serverErr) {}
+
+    // Direct client fallback
+    if (!parsed || !Array.isArray(parsed.clues) || parsed.clues.length === 0) {
+      const clientClues = await clientRestyleClues(wordList, styleInstructions, puzzleLevel);
+      if (clientClues && clientClues.length > 0) {
+        parsed = { clues: clientClues };
+      }
     }
 
-    const parsed = await res.json();
     const aiClueMap = new Map<string, string>();
     if (parsed && Array.isArray(parsed.clues)) {
       for (const item of parsed.clues) {
@@ -565,17 +600,30 @@ export async function getCluesForWords(words: string[], forceAi: boolean = false
     }
 
     try {
-        const res = await fetch('/api/gemini/get-clues-for-words', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ missingWords }),
-        });
+        let parsed: any = null;
 
-        if (!res.ok) {
-            throw new Error(`Server returned ${res.status}`);
+        try {
+            const res = await fetch('/api/gemini/get-clues-for-words', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ missingWords }),
+            });
+
+            if (res.ok) {
+                const text = await res.text();
+                if (text && text.trim().startsWith('{')) {
+                    parsed = JSON.parse(text);
+                }
+            }
+        } catch (_serverErr) {}
+
+        // Direct client-side Gemini fallback for Cloudflare / static hosts
+        if (!parsed || !parsed.clues || parsed.clues.length === 0) {
+            const clientClues = await clientGenerateWordClues(missingWords);
+            if (clientClues && clientClues.length > 0) {
+                parsed = { clues: clientClues };
+            }
         }
-
-        const parsed = await res.json();
 
         const clueList = parsed?.clues || parsed?.wordClues || (Array.isArray(parsed) ? parsed : []);
 

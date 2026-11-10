@@ -4,6 +4,7 @@ import { MARATHI_DICTIONARY, SMART_WORD_CLUES, getMarathiWordClue, sanitizeClue,
 import { ALL_USER_1000_WORDS, USER_WORDS_SET } from './userLexicon1000';
 import { getSavedCustomWordBank } from './customLexiconService';
 import { GoogleGenAI, Type } from '@google/genai';
+import { getClientGeminiApiKey } from './clientGeminiService';
 
 export interface ManualSlot {
     row: number;
@@ -370,9 +371,7 @@ export async function fetchAiWordSuggestions(
     existingLetters: string = ''
 ): Promise<WordSuggestion[]> {
     try {
-        const key = (typeof process !== 'undefined' && process?.env)
-            ? (process.env.GEMINI_API_KEY || process.env.API_KEY)
-            : undefined;
+        const key = getClientGeminiApiKey();
         if (!key || key === 'PLACEHOLDER_API_KEY') {
             return [];
         }
