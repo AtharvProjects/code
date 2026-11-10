@@ -14,6 +14,7 @@ import { IMPORTED_VOCABULARY_MAP, IMPORTED_VOCABULARY_WORDS } from './importedVo
 import { extractPlacedWordsFromGrid } from './crosswordService';
 import { invalidateWordCatalogCache } from './dynamicCrosswordSolver';
 import { GridCell } from '../types';
+import persistentLearnedWordsRaw from '../data/persistent_learned_lexicon.json';
 
 export interface LearnedWordEntry {
     word: string;
@@ -28,40 +29,64 @@ const INFINITE_STORAGE_KEY = 'shabdavedh_infinite_learned_lexicon_v1';
 const learnedRegistry = new Map<string, LearnedWordEntry>();
 
 /**
- * Initialize and load all previously auto-learned words from persistent storage into active memory.
+ * Initialize and load all previously auto-learned words from persistent storage and backend bundle into active memory.
  */
 export function initializeInfiniteLexicon(): number {
-    try {
-        if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 0;
+    let count = 0;
 
-        const raw = localStorage.getItem(INFINITE_STORAGE_KEY);
-        if (raw) {
-            const parsed: LearnedWordEntry[] = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-                let count = 0;
-                for (const entry of parsed) {
-                    if (entry && entry.word && entry.clue) {
-                        const cleanWord = entry.word.trim();
-                        const rawClue = entry.clue.trim();
-                        const cleanClue = sanitizeClue(cleanWord, rawClue);
-                        if (cleanWord.length >= 2 && cleanClue.length >= 2) {
-                            learnedRegistry.set(cleanWord, { ...entry, clue: cleanClue });
-                            // Hydrate memory dictionaries
-                            MARATHI_DICTIONARY[cleanWord] = cleanClue;
-                            SMART_WORD_CLUES[cleanWord] = cleanClue;
-                            USER_WORDS_SET.add(cleanWord);
-                            IMPORTED_VOCABULARY_MAP[cleanWord] = cleanClue;
-                            count++;
+    // 1. Load embedded persistent learned words from repo
+    try {
+        if (Array.isArray(persistentLearnedWordsRaw)) {
+            for (const entry of persistentLearnedWordsRaw) {
+                if (entry && entry.word && entry.clue) {
+                    const cleanWord = entry.word.trim();
+                    const rawClue = entry.clue.trim();
+                    const cleanClue = sanitizeClue(cleanWord, rawClue);
+                    if (cleanWord.length >= 2 && cleanClue.length >= 2) {
+                        learnedRegistry.set(cleanWord, { ...entry, clue: cleanClue });
+                        MARATHI_DICTIONARY[cleanWord] = cleanClue;
+                        SMART_WORD_CLUES[cleanWord] = cleanClue;
+                        USER_WORDS_SET.add(cleanWord);
+                        IMPORTED_VOCABULARY_MAP[cleanWord] = cleanClue;
+                        count++;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load embedded persistent words:', e);
+    }
+
+    // 2. Load any browser localStorage saved words
+    try {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            const raw = localStorage.getItem(INFINITE_STORAGE_KEY);
+            if (raw) {
+                const parsed: LearnedWordEntry[] = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    for (const entry of parsed) {
+                        if (entry && entry.word && entry.clue) {
+                            const cleanWord = entry.word.trim();
+                            const rawClue = entry.clue.trim();
+                            const cleanClue = sanitizeClue(cleanWord, rawClue);
+                            if (cleanWord.length >= 2 && cleanClue.length >= 2) {
+                                learnedRegistry.set(cleanWord, { ...entry, clue: cleanClue });
+                                MARATHI_DICTIONARY[cleanWord] = cleanClue;
+                                SMART_WORD_CLUES[cleanWord] = cleanClue;
+                                USER_WORDS_SET.add(cleanWord);
+                                IMPORTED_VOCABULARY_MAP[cleanWord] = cleanClue;
+                                count++;
+                            }
                         }
                     }
                 }
-                return count;
             }
         }
     } catch (e) {
         console.warn('Failed to initialize infinite lexicon from storage:', e);
     }
-    return 0;
+
+    return count;
 }
 
 /**
